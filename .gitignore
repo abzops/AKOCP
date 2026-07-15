@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+.git-push-temp
+dist
+.env
+.env.local
+.env.*.local
+coverage
+*.log
+.DS_Store
+.vscode
+.idea
