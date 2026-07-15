@@ -1,5 +1,27 @@
-import type { AppSnapshot, CreateOrderInput, CreateTrackInput, DataService, ExpenseCategory, OrderStatus, Profile, Role, Service, WithdrawalReason } from '../types'
+import type { AppSnapshot, CreateOrderInput, CreateTrackInput, DataService, ExpenseCategory, InventoryTrack, OrderStatus, Profile, Role, Service, WithdrawalReason } from '../types'
 import { normalizeSupabaseError, supabase } from './supabase'
+
+const INVENTORY_PAGE_SIZE = 1000
+
+async function loadInventoryTracks(): Promise<{ data: InventoryTrack[]; error: unknown }> {
+  const tracks: InventoryTrack[] = []
+
+  for (let from = 0; ; from += INVENTORY_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('inventory_tracks')
+      .select('*')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, from + INVENTORY_PAGE_SIZE - 1)
+
+    if (error) return { data: tracks, error }
+
+    const page = (data ?? []) as InventoryTrack[]
+    tracks.push(...page)
+    if (page.length < INVENTORY_PAGE_SIZE) return { data: tracks, error: null }
+  }
+}
 
 async function upload(bucket: 'payment-proofs' | 'expense-receipts', file: File | null, actor: Profile) {
   if (!file) return null
@@ -20,7 +42,7 @@ export const supabaseDataService: DataService = {
       supabase.from('services').select('*').order('sort_order'),
       supabase.from('profiles').select('*').eq('active', true).order('full_name'),
       supabase.from('customers').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false }),
-      supabase.from('inventory_tracks').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false }),
+      loadInventoryTracks(),
       supabase.from('orders').select('*, customer:customers(id,name,phone), service:services(id,code,name,price), assignee:profiles!orders_assigned_to_fkey(id,full_name)').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('payments').select('*').order('created_at', { ascending: false }),
       supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
