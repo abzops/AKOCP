@@ -1,32 +1,40 @@
 import { endOfMonth, endOfWeek, isAfter, isSameDay, startOfMonth, startOfWeek, subMonths } from 'date-fns'
 import type { AppSnapshot, DashboardMetrics } from '../types'
 
-const confirmedRevenue = (snapshot: AppSnapshot) => snapshot.payments.filter((payment) => payment.status === 'confirmed')
+const confirmedRevenue = (snapshot: AppSnapshot) => snapshot.walletTransactions.filter((transaction) => transaction.type === 'payment')
 
 export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
   const now = new Date()
-  const payments = confirmedRevenue(snapshot)
-  const revenueToday = payments.filter((payment) => isSameDay(new Date(payment.confirmed_at ?? payment.created_at), now)).reduce((sum, payment) => sum + payment.amount, 0)
+  const revenueTransactions = confirmedRevenue(snapshot)
+  const revenueToday = revenueTransactions.filter((transaction) => isSameDay(new Date(transaction.created_at), now)).reduce((sum, transaction) => sum + transaction.amount, 0)
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
-  const revenueWeek = payments.filter((payment) => {
-    const date = new Date(payment.confirmed_at ?? payment.created_at)
+  const revenueWeek = revenueTransactions.filter((transaction) => {
+    const date = new Date(transaction.created_at)
     return date >= weekStart && date <= weekEnd
-  }).reduce((sum, payment) => sum + payment.amount, 0)
+  }).reduce((sum, transaction) => sum + transaction.amount, 0)
   const monthStart = startOfMonth(now)
   const monthEnd = endOfMonth(now)
-  const revenueMonth = payments.filter((payment) => {
-    const date = new Date(payment.confirmed_at ?? payment.created_at)
+  const revenueMonth = revenueTransactions.filter((transaction) => {
+    const date = new Date(transaction.created_at)
     return date >= monthStart && date <= monthEnd
-  }).reduce((sum, payment) => sum + payment.amount, 0)
-  const totalRevenue = payments.reduce((sum, payment) => sum + payment.amount, 0)
+  }).reduce((sum, transaction) => sum + transaction.amount, 0)
+  const totalRevenue = revenueTransactions.reduce((sum, transaction) => sum + transaction.amount, 0)
   const totalExpenses = snapshot.expenses.reduce((sum, expense) => sum + expense.amount, 0)
   const approvedWithdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'approved').reduce((sum, withdrawal) => sum + withdrawal.amount, 0)
   const activeStatuses = new Set(['inquiry', 'payment_pending', 'in_progress'])
   const newCustomerBoundary = subMonths(now, 1)
-  const legacyOrders = snapshot.legacyOrders ?? []
-  const legacyContacts = new Set(legacyOrders.map((order) => order.phone || order.contact_name).filter(Boolean))
-  const legacyDates = legacyOrders.map((order) => order.record_date).sort()
+  const recordedSales = (snapshot.recordedSales ?? []).filter((order) => order.verified)
+  const recordedDates = recordedSales.map((order) => order.record_date).sort()
+  const contactKey = (phone?: string | null, name?: string | null) => phone || name?.trim().toLowerCase()
+  const allContacts = new Set([
+    ...snapshot.customers.map((customer) => contactKey(customer.phone, customer.name)),
+    ...recordedSales.map((sale) => contactKey(sale.phone, sale.contact_name))
+  ].filter(Boolean))
+  const newContacts = new Set([
+    ...snapshot.customers.filter((customer) => isAfter(new Date(customer.created_at), newCustomerBoundary)).map((customer) => contactKey(customer.phone, customer.name)),
+    ...recordedSales.filter((sale) => isAfter(new Date(`${sale.record_date}T12:00:00`), newCustomerBoundary)).map((sale) => contactKey(sale.phone, sale.contact_name))
+  ].filter(Boolean))
   return {
     revenueToday,
     revenueWeek,
@@ -41,14 +49,14 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
     completedToday: snapshot.orders.filter((order) => order.completed_at && isSameDay(new Date(order.completed_at), now)).length,
     pendingWithdrawals: snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'pending').length,
     totalInventory: snapshot.tracks.length,
-    totalCustomers: snapshot.customers.length,
+    totalCustomers: allContacts.size,
     adSpend: snapshot.expenses.filter((expense) => expense.category === 'meta_ads').reduce((sum, expense) => sum + expense.amount, 0),
-    newCustomers: snapshot.customers.filter((customer) => isAfter(new Date(customer.created_at), newCustomerBoundary)).length,
-    legacyRecordCount: legacyOrders.length,
-    legacyQuotedTotal: legacyOrders.reduce((sum, order) => sum + order.quoted_amount, 0),
-    legacyContactCount: legacyContacts.size,
-    legacyFirstDate: legacyDates[0],
-    legacyLastDate: legacyDates.at(-1)
+    newCustomers: newContacts.size,
+    recordedSaleCount: recordedSales.length,
+    recordedSalesTotal: recordedSales.reduce((sum, sale) => sum + sale.quoted_amount, 0),
+    recordedContactCount: new Set(recordedSales.map((sale) => contactKey(sale.phone, sale.contact_name)).filter(Boolean)).size,
+    recordedFirstDate: recordedDates[0],
+    recordedLastDate: recordedDates.at(-1)
   }
 }
 
@@ -59,23 +67,17 @@ export function getMonthlyRevenue(snapshot: AppSnapshot, months = 6) {
     const start = startOfMonth(date)
     const end = endOfMonth(date)
     const revenue = confirmedRevenue(snapshot)
-      .filter((payment) => {
-        const paymentDate = new Date(payment.confirmed_at ?? payment.created_at)
-        return paymentDate >= start && paymentDate <= end
+      .filter((transaction) => {
+        const transactionDate = new Date(transaction.created_at)
+        return transactionDate >= start && transactionDate <= end
       })
-      .reduce((sum, payment) => sum + payment.amount, 0)
-    const legacyQuoted = (snapshot.legacyOrders ?? [])
-      .filter((order) => {
-        const recordDate = new Date(`${order.record_date}T12:00:00`)
-        return recordDate >= start && recordDate <= end
-      })
-      .reduce((sum, order) => sum + order.quoted_amount, 0)
-    return { month: date.toLocaleString('en-IN', { month: 'short' }), revenue, legacyQuoted }
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+    return { month: date.toLocaleString('en-IN', { month: 'short' }), revenue }
   })
 }
 
 export function getServiceRevenue(snapshot: AppSnapshot) {
-  return snapshot.services.map((service) => {
+  const serviceRevenue = snapshot.services.map((service) => {
     const orders = snapshot.orders.filter((order) => order.service_id === service.id && order.payment_status === 'confirmed')
     return {
       name: service.code,
@@ -84,6 +86,16 @@ export function getServiceRevenue(snapshot: AppSnapshot) {
       orders: orders.length
     }
   })
+  const recordedSales = (snapshot.recordedSales ?? []).filter((sale) => sale.verified)
+  if (recordedSales.length) {
+    serviceRevenue.push({
+      name: 'REC',
+      label: 'Owner-recorded sales',
+      revenue: recordedSales.reduce((sum, sale) => sum + sale.quoted_amount, 0),
+      orders: recordedSales.length
+    })
+  }
+  return serviceRevenue
 }
 
 export function getLanguageOrders(snapshot: AppSnapshot) {

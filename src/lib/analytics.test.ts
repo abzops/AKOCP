@@ -34,9 +34,9 @@ function createSnapshot(): AppSnapshot {
       created_at: now,
       updated_at: now,
     }],
-    legacyOrders: [
-      { id: 'legacy-1', source_ref: 'owner-2026-07-06-01', record_date: '2026-07-06', phone: '9037922963', quoted_amount: 150, currency: 'INR', fulfillment_hint: 'audio', raw_note: 'audio', created_at: now },
-      { id: 'legacy-2', source_ref: 'owner-2026-07-07-01', record_date: '2026-07-07', contact_name: 'Abdul Saleem', quoted_amount: 1_000, currency: 'INR', fulfillment_hint: 'unspecified', created_at: now },
+    recordedSales: [
+      { id: 'legacy-1', source_ref: 'owner-2026-07-06-01', record_date: '2026-07-06', phone: '9037922963', quoted_amount: 150, currency: 'INR', fulfillment_hint: 'audio', raw_note: 'audio', verified: true, verified_at: now, created_at: now },
+      { id: 'legacy-2', source_ref: 'owner-2026-07-07-01', record_date: '2026-07-07', contact_name: 'Abdul Saleem', quoted_amount: 1_000, currency: 'INR', fulfillment_hint: 'unspecified', verified: true, verified_at: now, created_at: now },
     ],
     payments: [
       { id: 'payment-1', order_id: 'order-1', amount: 1_000, status: 'confirmed', uploaded_by: 'founder-1', confirmed_at: now, created_at: now },
@@ -49,7 +49,11 @@ function createSnapshot(): AppSnapshot {
     ],
     notifications: [],
     auditLogs: [],
-    walletTransactions: [],
+    walletTransactions: [
+      { id: 'transaction-1', type: 'payment', amount: 1_000, reference_type: 'payment', reference_id: 'payment-1', description: 'Confirmed payment', created_at: now },
+      { id: 'transaction-2', type: 'payment', amount: 150, reference_type: 'recorded_sale', reference_id: 'legacy-1', description: 'Recorded sale', created_at: '2026-07-06T12:00:00.000Z' },
+      { id: 'transaction-3', type: 'payment', amount: 1_000, reference_type: 'recorded_sale', reference_id: 'legacy-2', description: 'Recorded sale', created_at: '2026-07-07T12:00:00.000Z' },
+    ],
     syncedAt: now,
   }
 }
@@ -58,22 +62,23 @@ describe('business analytics', () => {
   it('derives the wallet from confirmed revenue, expenses, and approved withdrawals', () => {
     const snapshot = createSnapshot()
     const metrics = getDashboardMetrics(snapshot)
-    const confirmedRevenue = snapshot.payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + payment.amount, 0)
+    const confirmedRevenue = snapshot.walletTransactions.filter((transaction) => transaction.type === 'payment').reduce((sum, transaction) => sum + transaction.amount, 0)
     const expenses = snapshot.expenses.reduce((sum, expense) => sum + expense.amount, 0)
     const withdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'approved').reduce((sum, withdrawal) => sum + withdrawal.amount, 0)
     expect(metrics.totalRevenue).toBe(confirmedRevenue)
     expect(metrics.walletBalance).toBe(confirmedRevenue - expenses - withdrawals)
     expect(metrics.netProfit).toBe(confirmedRevenue - expenses)
-    expect(metrics.legacyRecordCount).toBe(2)
-    expect(metrics.legacyQuotedTotal).toBe(1_150)
-    expect(metrics.legacyContactCount).toBe(2)
+    expect(metrics.recordedSaleCount).toBe(2)
+    expect(metrics.recordedSalesTotal).toBe(1_150)
+    expect(metrics.recordedContactCount).toBe(2)
   })
 
   it('groups paid orders by controlled service', () => {
     const snapshot = createSnapshot()
     const groups = getServiceRevenue(snapshot)
-    expect(groups).toHaveLength(4)
+    expect(groups).toHaveLength(5)
     expect(groups.find((group) => group.name === 'EX250')?.orders).toBeGreaterThan(0)
+    expect(groups.find((group) => group.name === 'REC')?.revenue).toBe(1_150)
     expect(groups.every((group) => group.revenue >= 0)).toBe(true)
   })
 })

@@ -35,7 +35,7 @@ import { Badge, Button, ConfirmDialog, IconButton, cn } from './ui'
 
 const starters = [
   'What work needs attention today?',
-  'Show confirmed finance and legacy quoted totals for this month.',
+  'Show this month’s recorded sales, revenue, and wallet balance.',
   'ഈ ആഴ്ച pending orders ഏതൊക്കെയാണ്?',
   'Find duplicate inventory tracks for me.'
 ]
@@ -414,7 +414,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
                 <div className="copilot-welcome">
                   <span><Bot size={28} /></span>
                   <h2>Ask about operations</h2>
-                  <p>Read live business data, inspect the supplied legacy notes, or prepare a controlled change. Nothing changes until you confirm.</p>
+                  <p>Read live business data, inspect owner-recorded sales, or prepare a controlled change. Nothing changes until you confirm.</p>
                   <div>{starters.map((starter) => <button key={starter} onClick={() => void sendMessage(starter)}>{starter}</button>)}</div>
                 </div>
               ) : (
@@ -518,4 +518,3 @@ function ProposalCard({
     </article>
   )
 }
-

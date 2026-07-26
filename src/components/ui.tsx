@@ -95,7 +95,7 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const tone = status.includes('confirm') || status === 'completed' || status === 'delivered' || status === 'approved'
+  const tone = status.includes('confirm') || status === 'verified' || status === 'completed' || status === 'delivered' || status === 'approved'
     ? 'green'
     : status === 'cancelled' || status === 'rejected' || status === 'refunded'
       ? 'red'

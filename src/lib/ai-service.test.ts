@@ -33,7 +33,7 @@ function snapshot(): AppSnapshot {
       created_at: '2026-07-20T00:00:00Z',
       updated_at: '2026-07-25T00:00:00Z'
     }],
-    legacyOrders: [],
+    recordedSales: [],
     payments: [],
     expenses: [],
     withdrawals: [],

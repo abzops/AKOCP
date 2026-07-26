@@ -244,7 +244,7 @@ export interface AiCopilotResponse {
   fallbackUsed: boolean
 }
 
-export interface LegacyOrder {
+export interface RecordedSale {
   id: string
   source_ref: string
   record_date: string
@@ -255,6 +255,8 @@ export interface LegacyOrder {
   fulfillment_hint: 'audio' | 'missing_track' | 'named_track' | 'unspecified'
   track_title?: string | null
   raw_note?: string | null
+  verified: boolean
+  verified_at?: string | null
   created_at: string
 }
 
@@ -264,7 +266,7 @@ export interface AppSnapshot {
   customers: Customer[]
   tracks: InventoryTrack[]
   orders: Order[]
-  legacyOrders: LegacyOrder[]
+  recordedSales: RecordedSale[]
   payments: Payment[]
   expenses: Expense[]
   withdrawals: Withdrawal[]
@@ -291,11 +293,11 @@ export interface DashboardMetrics {
   totalCustomers: number
   adSpend: number
   newCustomers: number
-  legacyRecordCount: number
-  legacyQuotedTotal: number
-  legacyContactCount: number
-  legacyFirstDate?: string
-  legacyLastDate?: string
+  recordedSaleCount: number
+  recordedSalesTotal: number
+  recordedContactCount: number
+  recordedFirstDate?: string
+  recordedLastDate?: string
 }
 
 export interface CreateOrderInput {

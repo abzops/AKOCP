@@ -879,10 +879,19 @@ create table if not exists public.ai_usage_daily (
   primary key (user_id, usage_date)
 );
 
--- Historical entries supplied by the owner. These are deliberately separate
--- from confirmed orders, payments, and wallet transactions because the source
--- does not establish a service, payment confirmation, or delivery state.
-create table if not exists public.legacy_orders (
+-- Business records supplied and verified by the owner. They remain separate
+-- from structured orders because service, workflow status, and some customer
+-- details were not supplied, but verified amounts are posted to the wallet.
+do $$
+begin
+  if to_regclass('public.recorded_sales') is null
+     and to_regclass('public.legacy_orders') is not null then
+    alter table public.legacy_orders rename to recorded_sales;
+  end if;
+end;
+$$;
+
+create table if not exists public.recorded_sales (
   id uuid primary key default gen_random_uuid(),
   source_ref text not null unique,
   record_date date not null,
@@ -897,16 +906,23 @@ create table if not exists public.legacy_orders (
   created_at timestamptz not null default now()
 );
 
+alter table public.recorded_sales
+  add column if not exists verified boolean not null default false;
+alter table public.recorded_sales
+  add column if not exists verified_at timestamptz;
+
 create index if not exists ai_conversations_owner_updated_idx
   on public.ai_conversations(owner_id, updated_at desc);
 create index if not exists ai_messages_conversation_created_idx
   on public.ai_messages(conversation_id, created_at);
 create index if not exists ai_proposals_requester_status_idx
   on public.ai_action_proposals(requested_by, status, expires_at);
-create index if not exists legacy_orders_date_idx
-  on public.legacy_orders(record_date desc);
-create index if not exists legacy_orders_phone_idx
-  on public.legacy_orders(phone);
+drop index if exists public.legacy_orders_date_idx;
+drop index if exists public.legacy_orders_phone_idx;
+create index if not exists recorded_sales_date_idx
+  on public.recorded_sales(record_date desc);
+create index if not exists recorded_sales_phone_idx
+  on public.recorded_sales(phone);
 
 drop trigger if exists ai_settings_set_updated_at on public.ai_settings;
 create trigger ai_settings_set_updated_at before update on public.ai_settings
@@ -1194,16 +1210,16 @@ begin
       select count(*) from public.orders
       where deleted_at is null and completed_at::date between p_from and p_to
     ),
-    'legacyQuotedCount', (
-      select count(*) from public.legacy_orders
-      where record_date between p_from and p_to
+    'recordedSalesCount', (
+      select count(*) from public.recorded_sales
+      where verified and record_date between p_from and p_to
     ),
-    'legacyQuotedAmount', coalesce((
-      select sum(quoted_amount) from public.legacy_orders
-      where record_date between p_from and p_to
+    'recordedSalesAmount', coalesce((
+      select sum(quoted_amount) from public.recorded_sales
+      where verified and record_date between p_from and p_to
     ), 0),
-    'legacyFinanceWarning',
-      'Legacy quoted amounts are unverified and are excluded from confirmed revenue and wallet totals.'
+    'recordedSalesNote',
+      'Owner-verified imported sales are included in confirmed revenue and wallet totals through the immutable wallet ledger.'
   ) into summary;
 
   return summary;
@@ -1215,7 +1231,7 @@ alter table public.ai_conversations enable row level security;
 alter table public.ai_messages enable row level security;
 alter table public.ai_action_proposals enable row level security;
 alter table public.ai_usage_daily enable row level security;
-alter table public.legacy_orders enable row level security;
+alter table public.recorded_sales enable row level security;
 
 drop policy if exists "ai settings read authenticated" on public.ai_settings;
 create policy "ai settings read authenticated" on public.ai_settings
@@ -1273,14 +1289,16 @@ drop policy if exists "ai usage update own" on public.ai_usage_daily;
 create policy "ai usage update own" on public.ai_usage_daily
 for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
-drop policy if exists "legacy orders read authenticated" on public.legacy_orders;
-create policy "legacy orders read authenticated" on public.legacy_orders
+drop policy if exists "legacy orders read authenticated" on public.recorded_sales;
+drop policy if exists "recorded sales read authenticated" on public.recorded_sales;
+create policy "recorded sales read authenticated" on public.recorded_sales
 for select to authenticated using (true);
-drop policy if exists "legacy orders founder manage" on public.legacy_orders;
-create policy "legacy orders founder manage" on public.legacy_orders
+drop policy if exists "legacy orders founder manage" on public.recorded_sales;
+drop policy if exists "recorded sales founder manage" on public.recorded_sales;
+create policy "recorded sales founder manage" on public.recorded_sales
 for all to authenticated using (public.is_founder()) with check (public.is_founder());
 
-insert into public.legacy_orders (
+insert into public.recorded_sales (
   source_ref, record_date, contact_name, phone, quoted_amount,
   fulfillment_hint, track_title, raw_note
 )
@@ -1311,11 +1329,39 @@ on conflict (source_ref) do update set
   track_title = excluded.track_title,
   raw_note = excluded.raw_note;
 
+update public.recorded_sales
+set
+  verified = true,
+  verified_at = coalesce(verified_at, now())
+where source_ref like 'owner-2026-07-%';
+
+insert into public.wallet_transactions (
+  type, amount, reference_type, reference_id, description, created_at
+)
+select
+  'payment',
+  quoted_amount,
+  'recorded_sale',
+  id,
+  concat(
+    'Owner-verified recorded sale',
+    case
+      when coalesce(track_title, raw_note, contact_name, phone) is null then ''
+      else concat(' · ', coalesce(track_title, raw_note, contact_name, phone))
+    end
+  ),
+  record_date::timestamp + interval '12 hours'
+from public.recorded_sales
+where verified
+on conflict (reference_type, reference_id) do update set
+  amount = excluded.amount,
+  description = excluded.description;
+
 grant select on public.ai_settings, public.ai_conversations, public.ai_messages,
-  public.ai_action_proposals, public.ai_usage_daily, public.legacy_orders to authenticated;
+  public.ai_action_proposals, public.ai_usage_daily, public.recorded_sales to authenticated;
 grant insert, update on public.ai_conversations, public.ai_messages,
   public.ai_action_proposals, public.ai_usage_daily to authenticated;
-grant insert, update, delete on public.legacy_orders to authenticated;
+grant insert, update, delete on public.recorded_sales to authenticated;
 grant execute on function public.delete_ai_conversation(uuid) to authenticated;
 grant execute on function public.claim_ai_action_proposal(uuid) to authenticated;
 grant execute on function public.finish_ai_action_proposal(uuid,boolean,jsonb) to authenticated;
@@ -1325,7 +1371,7 @@ grant execute on function public.consume_ai_request() to authenticated;
 grant execute on function public.record_ai_usage_tokens(integer,integer) to authenticated;
 grant execute on function public.ai_business_summary(date,date) to authenticated;
 revoke all on public.ai_settings, public.ai_conversations, public.ai_messages,
-  public.ai_action_proposals, public.ai_usage_daily, public.legacy_orders from anon;
+  public.ai_action_proposals, public.ai_usage_daily, public.recorded_sales from anon;
 revoke delete on public.ai_conversations, public.ai_messages,
   public.ai_action_proposals, public.ai_usage_daily from authenticated;
 
