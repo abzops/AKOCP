@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Input, Modal, PageHeader, Select, StatusBadge, Textarea, cn } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
+import { aiService } from '../lib/ai-service'
 import { downloadCsv, formatCurrency, formatDate, fromNow, normalizeSearch, paymentStatusLabels, statusLabels } from '../lib/format'
 import type { CreateOrderInput, InventoryTrack, Order, OrderStatus } from '../types'
 
@@ -23,6 +24,7 @@ export function OrdersPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [selected, setSelected] = useState<Order | null>(null)
   const [paymentOrder, setPaymentOrder] = useState<Order | null>(null)
+  const [paymentHandoff, setPaymentHandoff] = useState<{ proposalId: string; amount: number; upiReference: string } | null>(null)
   const [completeOrder, setCompleteOrder] = useState<Order | null>(null)
   const [cancelOrder, setCancelOrder] = useState<Order | null>(null)
 
@@ -32,6 +34,23 @@ export function OrdersPage() {
       setParams({}, { replace: true })
     }
   }, [params, setParams])
+
+  useEffect(() => {
+    if (params.get('aiPayment') !== '1' || !snapshot) return
+    try {
+      const stored = sessionStorage.getItem('akocp-ai-payment')
+      if (!stored) throw new Error('The payment proposal handoff is missing')
+      const handoff = JSON.parse(stored) as { proposalId: string; orderId: string; amount: number; upiReference: string }
+      const order = snapshot.orders.find((item) => item.id === handoff.orderId)
+      if (!order) throw new Error('The proposed order is no longer available')
+      setPaymentHandoff({ proposalId: handoff.proposalId, amount: Number(handoff.amount), upiReference: handoff.upiReference || '' })
+      setPaymentOrder(order)
+    } catch {
+      sessionStorage.removeItem('akocp-ai-payment')
+    } finally {
+      setParams({}, { replace: true })
+    }
+  }, [params, setParams, snapshot])
 
   if (!snapshot || !profile) return null
   const filtered = snapshot.orders.filter((order) => {
@@ -107,7 +126,7 @@ export function OrdersPage() {
         canConfirm={profile.role === 'founder'}
         loading={Boolean(selected && busyAction?.includes(selected.id))}
       />
-      <PaymentModal order={paymentOrder} onClose={() => setPaymentOrder(null)} />
+      <PaymentModal order={paymentOrder} handoff={paymentHandoff} onClose={() => { setPaymentOrder(null); setPaymentHandoff(null); sessionStorage.removeItem('akocp-ai-payment') }} />
       <CompleteOrderModal order={completeOrder} onClose={() => setCompleteOrder(null)} />
       <ConfirmDialog open={Boolean(cancelOrder)} onClose={() => setCancelOrder(null)} onConfirm={() => void cancel()} title="Cancel this order?" message={`${cancelOrder?.order_number ?? 'This order'} will remain in the audit trail, but no longer count as active.`} confirmLabel="Cancel order" danger loading={Boolean(cancelOrder && busyAction === `cancel-${cancelOrder.id}`)} />
     </div>
@@ -189,18 +208,38 @@ function OrderDetailsModal({ order, onClose, onUpload, onConfirm, onComplete, on
   )
 }
 
-function PaymentModal({ order, onClose }: { order: Order | null; onClose(): void }) {
+function PaymentModal({ order, handoff, onClose }: { order: Order | null; handoff?: { proposalId: string; amount: number; upiReference: string } | null; onClose(): void }) {
   const { profile } = useAuth()
   const { service, execute, busyAction } = useAppData()
   const [amount, setAmount] = useState('')
   const [reference, setReference] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  useEffect(() => { if (order) { setAmount(String(order.price)); setReference(''); setFile(null) } }, [order])
+  useEffect(() => { if (order) { setAmount(String(handoff?.amount ?? order.price)); setReference(handoff?.upiReference ?? ''); setFile(null) } }, [handoff, order])
   if (!order || !profile) return null
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    await execute(`upload-${order.id}`, 'Payment proof uploaded for confirmation', () => service.uploadPayment(order.id, Number(amount), reference, file, profile))
-    onClose()
+    let succeeded = false
+    await execute(`upload-${order.id}`, 'Payment proof uploaded for confirmation', async () => {
+      let claimed = false
+      try {
+        if (handoff) {
+          await aiService.claimProposal(handoff.proposalId)
+          claimed = true
+        }
+        await service.uploadPayment(order.id, Number(amount), reference, file, profile)
+        if (handoff) await aiService.finishProposal(handoff.proposalId, true, { completedAt: new Date().toISOString() })
+        succeeded = true
+      } catch (error) {
+        if (handoff && claimed) {
+          await aiService.finishProposal(handoff.proposalId, false, {
+            failedAt: new Date().toISOString(),
+            error: error instanceof Error ? error.message : 'Payment proof upload failed'
+          }).catch(() => undefined)
+        }
+        throw error
+      }
+    })
+    if (succeeded) onClose()
   }
   return (
     <Modal open={Boolean(order)} onClose={onClose} title="Upload payment proof" description={`${order.order_number} · ${order.customer?.name}`} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button form="payment-form" type="submit" loading={busyAction === `upload-${order.id}`}>Submit proof</Button></>}>

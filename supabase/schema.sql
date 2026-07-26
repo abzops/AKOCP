@@ -798,12 +798,545 @@ grant execute on function public.set_profile_role(uuid,text) to authenticated;
 revoke all on public.wallet_transactions, public.audit_logs from anon;
 revoke insert, update, delete on public.wallet_transactions, public.audit_logs from authenticated;
 
+-- Hosted-free AI copilot. The model can read through the caller's RLS policies and
+-- draft proposals, but business mutations still use the existing application
+-- workflows after a human confirms them.
+create table if not exists public.ai_settings (
+  id smallint primary key default 1 check (id = 1),
+  enabled boolean not null default false,
+  primary_model text not null default 'qwen/qwen3.6-27b'
+    check (primary_model in ('qwen/qwen3.6-27b', 'openai/gpt-oss-20b')),
+  fallback_model text not null default 'openai/gpt-oss-20b'
+    check (fallback_model in ('qwen/qwen3.6-27b', 'openai/gpt-oss-20b')),
+  daily_request_limit integer not null default 40 check (daily_request_limit between 1 and 1000),
+  max_output_tokens integer not null default 800 check (max_output_tokens between 64 and 1200),
+  provider_status text not null default 'not_checked'
+    check (provider_status in ('not_checked', 'available', 'degraded', 'unavailable')),
+  provider_checked_at timestamptz,
+  provider_error text,
+  updated_by uuid references public.profiles(id),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.ai_settings (id) values (1) on conflict (id) do nothing;
+
+create table if not exists public.ai_conversations (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null default 'New conversation' check (char_length(title) between 1 and 120),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.ai_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.ai_conversations(id) on delete cascade,
+  sender text not null check (sender in ('user', 'assistant')),
+  content text not null check (char_length(content) between 1 and 12000),
+  model text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.ai_action_proposals (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.ai_conversations(id) on delete cascade,
+  assistant_message_id uuid references public.ai_messages(id) on delete cascade,
+  requested_by uuid not null references public.profiles(id) on delete cascade,
+  action_type text not null check (action_type in (
+    'create_order',
+    'update_order_status',
+    'open_payment_proof',
+    'confirm_payment',
+    'complete_order',
+    'deliver_order',
+    'create_inventory_track',
+    'update_customer',
+    'create_expense',
+    'request_withdrawal',
+    'review_withdrawal',
+    'update_service',
+    'update_team_role'
+  )),
+  payload jsonb not null default '{}'::jsonb check (jsonb_typeof(payload) = 'object'),
+  risk_level text not null check (risk_level in ('low', 'medium', 'high', 'critical')),
+  preconditions jsonb not null default '{}'::jsonb check (jsonb_typeof(preconditions) = 'object'),
+  status text not null default 'pending'
+    check (status in ('pending', 'executing', 'confirmed', 'failed', 'expired', 'cancelled')),
+  expires_at timestamptz not null default (now() + interval '15 minutes'),
+  confirmed_by uuid references public.profiles(id),
+  confirmed_at timestamptz,
+  execution_result jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.ai_usage_daily (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  usage_date date not null default current_date,
+  request_count integer not null default 0 check (request_count >= 0),
+  input_tokens integer not null default 0 check (input_tokens >= 0),
+  output_tokens integer not null default 0 check (output_tokens >= 0),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, usage_date)
+);
+
+-- Historical entries supplied by the owner. These are deliberately separate
+-- from confirmed orders, payments, and wallet transactions because the source
+-- does not establish a service, payment confirmation, or delivery state.
+create table if not exists public.legacy_orders (
+  id uuid primary key default gen_random_uuid(),
+  source_ref text not null unique,
+  record_date date not null,
+  contact_name text,
+  phone text check (phone is null or phone ~ '^[0-9]{8,15}$'),
+  quoted_amount numeric(12,2) not null check (quoted_amount > 0),
+  currency text not null default 'INR' check (currency = 'INR'),
+  fulfillment_hint text not null
+    check (fulfillment_hint in ('audio', 'missing_track', 'named_track', 'unspecified')),
+  track_title text,
+  raw_note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ai_conversations_owner_updated_idx
+  on public.ai_conversations(owner_id, updated_at desc);
+create index if not exists ai_messages_conversation_created_idx
+  on public.ai_messages(conversation_id, created_at);
+create index if not exists ai_proposals_requester_status_idx
+  on public.ai_action_proposals(requested_by, status, expires_at);
+create index if not exists legacy_orders_date_idx
+  on public.legacy_orders(record_date desc);
+create index if not exists legacy_orders_phone_idx
+  on public.legacy_orders(phone);
+
+drop trigger if exists ai_settings_set_updated_at on public.ai_settings;
+create trigger ai_settings_set_updated_at before update on public.ai_settings
+for each row execute function public.set_updated_at();
+drop trigger if exists ai_conversations_set_updated_at on public.ai_conversations;
+create trigger ai_conversations_set_updated_at before update on public.ai_conversations
+for each row execute function public.set_updated_at();
+
+create or replace function public.touch_ai_conversation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.ai_conversations set updated_at = now() where id = new.conversation_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists ai_messages_touch_conversation on public.ai_messages;
+create trigger ai_messages_touch_conversation after insert on public.ai_messages
+for each row execute function public.touch_ai_conversation();
+
+create or replace function public.delete_ai_conversation(p_conversation_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  conversation_row public.ai_conversations%rowtype;
+  message_count integer;
+  proposal_count integer;
+begin
+  select * into conversation_row
+  from public.ai_conversations
+  where id = p_conversation_id
+  for update;
+
+  if not found then raise exception 'Conversation not found'; end if;
+  if conversation_row.owner_id <> auth.uid() and not public.is_founder() then
+    raise exception 'You cannot delete this conversation';
+  end if;
+
+  select count(*) into message_count from public.ai_messages where conversation_id = p_conversation_id;
+  select count(*) into proposal_count from public.ai_action_proposals where conversation_id = p_conversation_id;
+
+  insert into public.audit_logs (
+    actor_id, action, entity_type, entity_id, before_data, after_data
+  ) values (
+    auth.uid(),
+    'deleted',
+    'ai_conversation',
+    p_conversation_id,
+    jsonb_build_object(
+      'owner_id', conversation_row.owner_id,
+      'created_at', conversation_row.created_at,
+      'message_count', message_count,
+      'proposal_count', proposal_count
+    ),
+    jsonb_build_object('content_removed', true)
+  );
+
+  delete from public.ai_conversations where id = p_conversation_id;
+end;
+$$;
+
+create or replace function public.claim_ai_action_proposal(p_proposal_id uuid)
+returns public.ai_action_proposals
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  proposal_row public.ai_action_proposals%rowtype;
+begin
+  select * into proposal_row
+  from public.ai_action_proposals
+  where id = p_proposal_id
+  for update;
+
+  if not found then raise exception 'Proposal not found'; end if;
+  if proposal_row.requested_by <> auth.uid() then raise exception 'This proposal belongs to another user'; end if;
+  if proposal_row.status <> 'pending' then raise exception 'Proposal has already been used'; end if;
+
+  if proposal_row.expires_at <= now() then
+    update public.ai_action_proposals
+    set status = 'expired'
+    where id = p_proposal_id
+    returning * into proposal_row;
+    return proposal_row;
+  end if;
+
+  update public.ai_action_proposals
+  set status = 'executing', confirmed_by = auth.uid(), confirmed_at = now()
+  where id = p_proposal_id
+  returning * into proposal_row;
+
+  return proposal_row;
+end;
+$$;
+
+create or replace function public.finish_ai_action_proposal(
+  p_proposal_id uuid,
+  p_success boolean,
+  p_result jsonb default '{}'::jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.ai_action_proposals
+  set
+    status = case when p_success then 'confirmed' else 'failed' end,
+    execution_result = coalesce(p_result, '{}'::jsonb)
+  where id = p_proposal_id
+    and requested_by = auth.uid()
+    and confirmed_by = auth.uid()
+    and status = 'executing';
+
+  if not found then raise exception 'Proposal is not awaiting an execution result'; end if;
+end;
+$$;
+
+create or replace function public.cancel_ai_action_proposal(p_proposal_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.ai_action_proposals
+  set status = case when expires_at <= now() then 'expired' else 'cancelled' end
+  where id = p_proposal_id
+    and requested_by = auth.uid()
+    and status = 'pending';
+
+  if not found then raise exception 'Proposal is not available to cancel'; end if;
+end;
+$$;
+
+create or replace function public.update_ai_settings(
+  p_enabled boolean,
+  p_primary_model text,
+  p_fallback_model text,
+  p_daily_request_limit integer,
+  p_max_output_tokens integer
+)
+returns public.ai_settings
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  settings_row public.ai_settings%rowtype;
+begin
+  if not public.is_founder() then raise exception 'Founder permission is required'; end if;
+  if p_primary_model not in ('qwen/qwen3.6-27b', 'openai/gpt-oss-20b') then raise exception 'Primary model is not allowed'; end if;
+  if p_fallback_model not in ('qwen/qwen3.6-27b', 'openai/gpt-oss-20b') then raise exception 'Fallback model is not allowed'; end if;
+  if p_daily_request_limit not between 1 and 1000 then raise exception 'Daily request limit is out of range'; end if;
+  if p_max_output_tokens not between 64 and 1200 then raise exception 'Output token limit is out of range'; end if;
+
+  update public.ai_settings
+  set
+    enabled = p_enabled,
+    primary_model = p_primary_model,
+    fallback_model = p_fallback_model,
+    daily_request_limit = p_daily_request_limit,
+    max_output_tokens = p_max_output_tokens,
+    updated_by = auth.uid()
+  where id = 1
+  returning * into settings_row;
+
+  return settings_row;
+end;
+$$;
+
+create or replace function public.consume_ai_request()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  settings_row public.ai_settings%rowtype;
+  usage_row public.ai_usage_daily%rowtype;
+begin
+  if auth.uid() is null then raise exception 'Authentication is required'; end if;
+
+  select * into settings_row from public.ai_settings where id = 1;
+  if not settings_row.enabled then raise exception 'AI copilot is disabled'; end if;
+
+  insert into public.ai_usage_daily (user_id, usage_date, request_count)
+  values (auth.uid(), current_date, 0)
+  on conflict (user_id, usage_date) do nothing;
+
+  select * into usage_row
+  from public.ai_usage_daily
+  where user_id = auth.uid() and usage_date = current_date
+  for update;
+
+  if usage_row.request_count >= settings_row.daily_request_limit then
+    raise exception 'Daily AI request limit reached';
+  end if;
+
+  update public.ai_usage_daily
+  set request_count = request_count + 1, updated_at = now()
+  where user_id = auth.uid() and usage_date = current_date
+  returning * into usage_row;
+
+  return jsonb_build_object(
+    'requestCount', usage_row.request_count,
+    'dailyLimit', settings_row.daily_request_limit,
+    'remaining', greatest(settings_row.daily_request_limit - usage_row.request_count, 0),
+    'inputTokens', usage_row.input_tokens,
+    'outputTokens', usage_row.output_tokens
+  );
+end;
+$$;
+
+create or replace function public.record_ai_usage_tokens(
+  p_input_tokens integer,
+  p_output_tokens integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Authentication is required'; end if;
+  if p_input_tokens < 0 or p_output_tokens < 0 then raise exception 'Token counts cannot be negative'; end if;
+
+  update public.ai_usage_daily
+  set
+    input_tokens = input_tokens + least(p_input_tokens, 1000000),
+    output_tokens = output_tokens + least(p_output_tokens, 1000000),
+    updated_at = now()
+  where user_id = auth.uid() and usage_date = current_date;
+end;
+$$;
+
+create or replace function public.ai_business_summary(
+  p_from date,
+  p_to date
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  summary jsonb;
+begin
+  if p_from is null or p_to is null or p_from > p_to then raise exception 'Invalid date range'; end if;
+  if p_to - p_from > 366 then raise exception 'Date range cannot exceed 366 days'; end if;
+
+  select jsonb_build_object(
+    'from', p_from,
+    'to', p_to,
+    'confirmedRevenue', coalesce((
+      select sum(amount) from public.wallet_transactions
+      where type = 'payment' and created_at::date between p_from and p_to
+    ), 0),
+    'expenses', abs(coalesce((
+      select sum(amount) from public.wallet_transactions
+      where type = 'expense' and created_at::date between p_from and p_to
+    ), 0)),
+    'withdrawals', abs(coalesce((
+      select sum(amount) from public.wallet_transactions
+      where type = 'withdrawal' and created_at::date between p_from and p_to
+    ), 0)),
+    'netWalletMovement', coalesce((
+      select sum(amount) from public.wallet_transactions
+      where created_at::date between p_from and p_to
+    ), 0),
+    'ordersCreated', (
+      select count(*) from public.orders
+      where deleted_at is null and created_at::date between p_from and p_to
+    ),
+    'ordersCompleted', (
+      select count(*) from public.orders
+      where deleted_at is null and completed_at::date between p_from and p_to
+    ),
+    'legacyQuotedCount', (
+      select count(*) from public.legacy_orders
+      where record_date between p_from and p_to
+    ),
+    'legacyQuotedAmount', coalesce((
+      select sum(quoted_amount) from public.legacy_orders
+      where record_date between p_from and p_to
+    ), 0),
+    'legacyFinanceWarning',
+      'Legacy quoted amounts are unverified and are excluded from confirmed revenue and wallet totals.'
+  ) into summary;
+
+  return summary;
+end;
+$$;
+
+alter table public.ai_settings enable row level security;
+alter table public.ai_conversations enable row level security;
+alter table public.ai_messages enable row level security;
+alter table public.ai_action_proposals enable row level security;
+alter table public.ai_usage_daily enable row level security;
+alter table public.legacy_orders enable row level security;
+
+drop policy if exists "ai settings read authenticated" on public.ai_settings;
+create policy "ai settings read authenticated" on public.ai_settings
+for select to authenticated using (true);
+
+drop policy if exists "ai conversations read own or founder" on public.ai_conversations;
+create policy "ai conversations read own or founder" on public.ai_conversations
+for select to authenticated using (owner_id = auth.uid() or public.is_founder());
+drop policy if exists "ai conversations create own" on public.ai_conversations;
+create policy "ai conversations create own" on public.ai_conversations
+for insert to authenticated with check (owner_id = auth.uid());
+drop policy if exists "ai conversations update own" on public.ai_conversations;
+create policy "ai conversations update own" on public.ai_conversations
+for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+drop policy if exists "ai messages read conversation" on public.ai_messages;
+create policy "ai messages read conversation" on public.ai_messages
+for select to authenticated using (
+  exists (
+    select 1 from public.ai_conversations c
+    where c.id = conversation_id and (c.owner_id = auth.uid() or public.is_founder())
+  )
+);
+drop policy if exists "ai messages create own conversation" on public.ai_messages;
+create policy "ai messages create own conversation" on public.ai_messages
+for insert to authenticated with check (
+  exists (
+    select 1 from public.ai_conversations c
+    where c.id = conversation_id and c.owner_id = auth.uid()
+  )
+);
+
+drop policy if exists "ai proposals read own or founder" on public.ai_action_proposals;
+create policy "ai proposals read own or founder" on public.ai_action_proposals
+for select to authenticated using (requested_by = auth.uid() or public.is_founder());
+drop policy if exists "ai proposals create own" on public.ai_action_proposals;
+create policy "ai proposals create own" on public.ai_action_proposals
+for insert to authenticated with check (
+  requested_by = auth.uid()
+  and status = 'pending'
+  and expires_at <= now() + interval '15 minutes'
+  and exists (
+    select 1 from public.ai_conversations c
+    where c.id = conversation_id and c.owner_id = auth.uid()
+  )
+);
+
+drop policy if exists "ai usage read own or founder" on public.ai_usage_daily;
+create policy "ai usage read own or founder" on public.ai_usage_daily
+for select to authenticated using (user_id = auth.uid() or public.is_founder());
+drop policy if exists "ai usage create own" on public.ai_usage_daily;
+create policy "ai usage create own" on public.ai_usage_daily
+for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists "ai usage update own" on public.ai_usage_daily;
+create policy "ai usage update own" on public.ai_usage_daily
+for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "legacy orders read authenticated" on public.legacy_orders;
+create policy "legacy orders read authenticated" on public.legacy_orders
+for select to authenticated using (true);
+drop policy if exists "legacy orders founder manage" on public.legacy_orders;
+create policy "legacy orders founder manage" on public.legacy_orders
+for all to authenticated using (public.is_founder()) with check (public.is_founder());
+
+insert into public.legacy_orders (
+  source_ref, record_date, contact_name, phone, quoted_amount,
+  fulfillment_hint, track_title, raw_note
+)
+values
+  ('owner-2026-07-06-01', '2026-07-06', null, '9037922963', 150, 'audio', null, 'audio'),
+  ('owner-2026-07-06-02', '2026-07-06', null, '9946417172', 150, 'audio', null, 'audio'),
+  ('owner-2026-07-07-01', '2026-07-07', null, '8943091910', 150, 'unspecified', null, null),
+  ('owner-2026-07-07-02', '2026-07-07', null, '97477699104', 1000, 'named_track', 'soniyee hiriyee', 'soniyee hiriyee'),
+  ('owner-2026-07-07-03', '2026-07-07', null, '9048707303', 350, 'missing_track', null, 'empty'),
+  ('owner-2026-07-07-04', '2026-07-07', null, '9656335848', 800, 'named_track', 'dil ka jo hai', 'dil ka jo hai'),
+  ('owner-2026-07-08-01', '2026-07-08', null, '966571035149', 450, 'missing_track', null, 'empty'),
+  ('owner-2026-07-08-02', '2026-07-08', null, '9447486846', 350, 'audio', null, 'audio'),
+  ('owner-2026-07-08-03', '2026-07-08', null, '7736322504', 200, 'audio', null, 'audio'),
+  ('owner-2026-07-08-04', '2026-07-08', null, '97471746305', 400, 'missing_track', null, 'empty'),
+  ('owner-2026-07-09-01', '2026-07-09', 'Abdul Saleem', null, 1000, 'unspecified', null, null),
+  ('owner-2026-07-09-02', '2026-07-09', 'jaya kumar', null, 350, 'unspecified', null, null),
+  ('owner-2026-07-14-01', '2026-07-14', null, '9645058184', 300, 'named_track', 'hrudayeswari', 'hrudayeswari'),
+  ('owner-2026-07-14-02', '2026-07-14', null, '966506781974', 500, 'missing_track', null, 'empty'),
+  ('owner-2026-07-25-01', '2026-07-25', null, '9037922963', 150, 'audio', null, 'audio'),
+  ('owner-2026-07-25-02', '2026-07-25', null, '8714136008', 300, 'named_track', 'sahiba', 'sahiba'),
+  ('owner-2026-07-25-03', '2026-07-25', null, '8714136008', 300, 'audio', null, 'audio')
+on conflict (source_ref) do update set
+  record_date = excluded.record_date,
+  contact_name = excluded.contact_name,
+  phone = excluded.phone,
+  quoted_amount = excluded.quoted_amount,
+  fulfillment_hint = excluded.fulfillment_hint,
+  track_title = excluded.track_title,
+  raw_note = excluded.raw_note;
+
+grant select on public.ai_settings, public.ai_conversations, public.ai_messages,
+  public.ai_action_proposals, public.ai_usage_daily, public.legacy_orders to authenticated;
+grant insert, update on public.ai_conversations, public.ai_messages,
+  public.ai_action_proposals, public.ai_usage_daily to authenticated;
+grant insert, update, delete on public.legacy_orders to authenticated;
+grant execute on function public.delete_ai_conversation(uuid) to authenticated;
+grant execute on function public.claim_ai_action_proposal(uuid) to authenticated;
+grant execute on function public.finish_ai_action_proposal(uuid,boolean,jsonb) to authenticated;
+grant execute on function public.cancel_ai_action_proposal(uuid) to authenticated;
+grant execute on function public.update_ai_settings(boolean,text,text,integer,integer) to authenticated;
+grant execute on function public.consume_ai_request() to authenticated;
+grant execute on function public.record_ai_usage_tokens(integer,integer) to authenticated;
+grant execute on function public.ai_business_summary(date,date) to authenticated;
+revoke all on public.ai_settings, public.ai_conversations, public.ai_messages,
+  public.ai_action_proposals, public.ai_usage_daily, public.legacy_orders from anon;
+revoke delete on public.ai_conversations, public.ai_messages,
+  public.ai_action_proposals, public.ai_usage_daily from authenticated;
+
 do $$
 begin
   begin alter publication supabase_realtime add table public.orders; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.payments; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.withdrawals; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.notifications; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.ai_messages; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.ai_action_proposals; exception when duplicate_object then null; end;
 end;
 $$;
 

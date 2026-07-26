@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bell,
+  Bot,
   ChevronRight,
   ClipboardList,
   Command,
@@ -26,6 +27,7 @@ import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
 import { fromNow, initials, normalizeSearch } from '../lib/format'
 import { Badge, BrandMark, Button, IconButton, Modal, ToastStack, cn } from './ui'
+import { CopilotDrawer } from './CopilotDrawer'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['founder', 'operations'] },
@@ -54,6 +56,7 @@ export function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [copilotOpen, setCopilotOpen] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('akocp-theme') ?? 'dark')
   const [installEvent, setInstallEvent] = useState<any>(null)
   const navigate = useNavigate()
@@ -145,6 +148,7 @@ export function AppLayout() {
           </button>
           <div className="topbar-actions">
             {offline && <span className="offline-pill"><WifiOff size={14} /> Offline</span>}
+            <IconButton label="Open operations copilot" className="copilot-trigger" onClick={() => setCopilotOpen(true)}><Bot size={18} /></IconButton>
             <IconButton label="Refresh data" onClick={() => void refresh()} className={refreshing ? 'spin-child' : ''}><RefreshCw size={18} /></IconButton>
             <IconButton label={theme === 'dark' ? 'Use light mode' : 'Use dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</IconButton>
             <div className="popover-wrap">
@@ -189,6 +193,7 @@ export function AppLayout() {
       </div>
 
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <CopilotDrawer open={copilotOpen} onClose={() => setCopilotOpen(false)} />
       <button className="mobile-fab" aria-label="Create order" onClick={() => navigate('/orders?new=1')}><Plus size={23} /></button>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>

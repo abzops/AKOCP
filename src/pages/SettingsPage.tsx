@@ -1,12 +1,13 @@
-import { BadgeIndianRupee, CheckCircle2, Cloud, Database, Edit3, FileClock, KeyRound, LockKeyhole, Radio, ShieldCheck, UserCog, UsersRound } from 'lucide-react'
+import { BadgeIndianRupee, Bot, CheckCircle2, Cloud, Database, Edit3, FileClock, KeyRound, LockKeyhole, Radio, ShieldCheck, UserCog, UsersRound } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Badge, Button, Card, ConfirmDialog, Input, Modal, PageHeader, StatusBadge } from '../components/ui'
+import { Badge, Button, Card, ConfirmDialog, Input, Modal, PageHeader, Select, StatusBadge } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
+import { aiService } from '../lib/ai-service'
 import { formatCurrency, formatDate, humanize, initials } from '../lib/format'
-import type { Profile, Role, Service } from '../types'
+import type { AiSettings, Profile, Role, Service } from '../types'
 
-type SettingsTab = 'services' | 'team' | 'audit' | 'system'
+type SettingsTab = 'services' | 'team' | 'ai' | 'audit' | 'system'
 
 export function SettingsPage() {
   const { snapshot } = useAppData()
@@ -16,11 +17,64 @@ export function SettingsPage() {
     <div className="page-stack settings-page">
       <PageHeader eyebrow="Founder controls" title="System settings" description="Manage controlled pricing, access roles, audit history, and application status." />
       <div className="settings-layout">
-        <Card className="settings-nav">{(['services', 'team', 'audit', 'system'] as SettingsTab[]).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'services' ? <BadgeIndianRupee size={18} /> : item === 'team' ? <UsersRound size={18} /> : item === 'audit' ? <FileClock size={18} /> : <Database size={18} />}<span>{item === 'audit' ? 'Audit log' : item.charAt(0).toUpperCase() + item.slice(1)}</span></button>)}</Card>
-        <div className="settings-content">{tab === 'services' && <ServicesSettings />}{tab === 'team' && <TeamSettings />}{tab === 'audit' && <AuditSettings />}{tab === 'system' && <SystemSettings />}</div>
+        <Card className="settings-nav">{(['services', 'team', 'ai', 'audit', 'system'] as SettingsTab[]).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'services' ? <BadgeIndianRupee size={18} /> : item === 'team' ? <UsersRound size={18} /> : item === 'ai' ? <Bot size={18} /> : item === 'audit' ? <FileClock size={18} /> : <Database size={18} />}<span>{item === 'audit' ? 'Audit log' : item === 'ai' ? 'AI copilot' : item.charAt(0).toUpperCase() + item.slice(1)}</span></button>)}</Card>
+        <div className="settings-content">{tab === 'services' && <ServicesSettings />}{tab === 'team' && <TeamSettings />}{tab === 'ai' && <AiSettingsPanel />}{tab === 'audit' && <AuditSettings />}{tab === 'system' && <SystemSettings />}</div>
       </div>
     </div>
   )
+}
+
+function AiSettingsPanel() {
+  const { showToast } = useAppData()
+  const [settings, setSettings] = useState<AiSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    let active = true
+    aiService.getSettings()
+      .then((value) => active && setSettings(value))
+      .catch((error) => active && showToast({ type: 'error', title: 'AI settings unavailable', message: error instanceof Error ? error.message : undefined }))
+      .finally(() => active && setLoading(false))
+    return () => { active = false }
+  }, [showToast])
+  if (loading) return <Card className="settings-panel ai-settings-panel"><div className="settings-heading"><span><Bot size={21} /></span><div><h2>Operations copilot</h2><p>Loading secure provider controls…</p></div></div></Card>
+  if (!settings) return <Card className="settings-panel ai-settings-panel"><div className="settings-heading"><span><Bot size={21} /></span><div><h2>Operations copilot</h2><p>Apply the latest Supabase schema to configure AI.</p></div></div></Card>
+
+  const update = <K extends keyof AiSettings>(key: K, value: AiSettings[K]) => setSettings((current) => current ? { ...current, [key]: value } : current)
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      const next = await aiService.updateSettings(settings)
+      setSettings(next)
+      showToast({ type: 'success', title: next.enabled ? 'Operations copilot enabled' : 'Operations copilot disabled' })
+    } catch (error) {
+      showToast({ type: 'error', title: 'Could not save AI settings', message: error instanceof Error ? error.message : undefined })
+    } finally {
+      setSaving(false)
+    }
+  }
+  return <Card className="settings-panel ai-settings-panel">
+    <div className="settings-heading"><span><Bot size={21} /></span><div><h2>Operations copilot</h2><p>Groq runs in a protected Edge Function. Every proposed business change still requires confirmation.</p></div></div>
+    <form className="ai-settings-form" onSubmit={save}>
+      <label className="toggle-row"><div><strong>Enable AI copilot</strong><span>Emergency off switch; the rest of AK OCP continues normally.</span></div><span className="switch"><input type="checkbox" checked={settings.enabled} onChange={(event) => update('enabled', event.target.checked)} /><i /></span></label>
+      <div className="form-grid two">
+        <Select label="Primary model" value={settings.primary_model} onChange={(event) => update('primary_model', event.target.value as AiSettings['primary_model'])}><option value="qwen/qwen3.6-27b">Qwen 3.6 27B</option><option value="openai/gpt-oss-20b">GPT OSS 20B</option></Select>
+        <Select label="Fallback model" value={settings.fallback_model} onChange={(event) => update('fallback_model', event.target.value as AiSettings['fallback_model'])}><option value="openai/gpt-oss-20b">GPT OSS 20B</option><option value="qwen/qwen3.6-27b">Qwen 3.6 27B</option></Select>
+      </div>
+      <div className="form-grid two">
+        <Input label="Daily prompts per user" type="number" min="1" max="1000" value={settings.daily_request_limit} onChange={(event) => update('daily_request_limit', Number(event.target.value))} required />
+        <Input label="Maximum response tokens" type="number" min="64" max="1200" value={settings.max_output_tokens} onChange={(event) => update('max_output_tokens', Number(event.target.value))} required />
+      </div>
+      <div className="ai-provider-health">
+        <span><Radio size={18} /></span>
+        <div><strong>Provider health</strong><small>{settings.provider_checked_at ? `Last checked ${formatDate(settings.provider_checked_at, 'long')}` : 'A live check appears after the first successful prompt.'}{settings.provider_error ? ` · ${settings.provider_error}` : ''}</small></div>
+        <Badge tone={settings.provider_status === 'available' ? 'green' : settings.provider_status === 'degraded' ? 'yellow' : settings.provider_status === 'unavailable' ? 'red' : 'neutral'}>{humanize(settings.provider_status)}</Badge>
+      </div>
+      <div className="security-callout"><KeyRound size={19} /><div><strong>Provider key stays server-side</strong><p>Set GROQ_API_KEY in Supabase Edge Function secrets. It is never saved in GitHub Pages or sent to the browser.</p></div></div>
+      <div className="ai-settings-actions"><Button type="submit" loading={saving}>Save AI controls</Button></div>
+    </form>
+  </Card>
 }
 
 function ServicesSettings() {

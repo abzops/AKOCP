@@ -10,6 +10,21 @@ export type PaymentStatus = 'unpaid' | 'proof_uploaded' | 'confirmed' | 'refunde
 export type WithdrawalStatus = 'pending' | 'approved' | 'rejected'
 export type ExpenseCategory = 'meta_ads' | 'travel' | 'food' | 'internet' | 'equipment' | 'miscellaneous'
 export type WithdrawalReason = 'salary' | 'profit_share' | 'travel' | 'food' | 'miscellaneous'
+export type AiActionType =
+  | 'create_order'
+  | 'update_order_status'
+  | 'open_payment_proof'
+  | 'confirm_payment'
+  | 'complete_order'
+  | 'deliver_order'
+  | 'create_inventory_track'
+  | 'update_customer'
+  | 'create_expense'
+  | 'request_withdrawal'
+  | 'review_withdrawal'
+  | 'update_service'
+  | 'update_team_role'
+export type AiProposalStatus = 'pending' | 'executing' | 'confirmed' | 'failed' | 'expired' | 'cancelled'
 
 export interface Profile {
   id: string
@@ -160,6 +175,86 @@ export interface WalletTransaction {
   reference_type: string
   reference_id: string
   description: string
+  created_at: string
+}
+
+export interface AiConversation {
+  id: string
+  owner_id: string
+  title: string
+  created_at: string
+  updated_at: string
+  owner?: Pick<Profile, 'id' | 'full_name' | 'email'> | null
+}
+
+export interface AiMessage {
+  id: string
+  conversation_id: string
+  sender: 'user' | 'assistant'
+  content: string
+  model?: string | null
+  created_at: string
+}
+
+export interface AiActionProposal {
+  id: string
+  conversation_id: string
+  assistant_message_id?: string | null
+  requested_by: string
+  action_type: AiActionType
+  payload: Record<string, unknown>
+  risk_level: 'low' | 'medium' | 'high' | 'critical'
+  preconditions: Record<string, unknown>
+  status: AiProposalStatus
+  expires_at: string
+  confirmed_by?: string | null
+  confirmed_at?: string | null
+  execution_result?: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface AiSettings {
+  id: number
+  enabled: boolean
+  primary_model: 'qwen/qwen3.6-27b' | 'openai/gpt-oss-20b'
+  fallback_model: 'qwen/qwen3.6-27b' | 'openai/gpt-oss-20b'
+  daily_request_limit: number
+  max_output_tokens: number
+  provider_status: 'not_checked' | 'available' | 'degraded' | 'unavailable'
+  provider_checked_at?: string | null
+  provider_error?: string | null
+  updated_by?: string | null
+  updated_at: string
+}
+
+export interface AiUsage {
+  requestCount: number
+  dailyLimit: number
+  remaining: number
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface AiCopilotResponse {
+  conversationId: string
+  message: AiMessage
+  proposals: AiActionProposal[]
+  usage: AiUsage
+  model: string
+  fallbackUsed: boolean
+}
+
+export interface LegacyOrder {
+  id: string
+  source_ref: string
+  record_date: string
+  contact_name?: string | null
+  phone?: string | null
+  quoted_amount: number
+  currency: 'INR'
+  fulfillment_hint: 'audio' | 'missing_track' | 'named_track' | 'unspecified'
+  track_title?: string | null
+  raw_note?: string | null
   created_at: string
 }
 
