@@ -34,6 +34,10 @@ function createSnapshot(): AppSnapshot {
       created_at: now,
       updated_at: now,
     }],
+    legacyOrders: [
+      { id: 'legacy-1', source_ref: 'owner-2026-07-06-01', record_date: '2026-07-06', phone: '9037922963', quoted_amount: 150, currency: 'INR', fulfillment_hint: 'audio', raw_note: 'audio', created_at: now },
+      { id: 'legacy-2', source_ref: 'owner-2026-07-07-01', record_date: '2026-07-07', contact_name: 'Abdul Saleem', quoted_amount: 1_000, currency: 'INR', fulfillment_hint: 'unspecified', created_at: now },
+    ],
     payments: [
       { id: 'payment-1', order_id: 'order-1', amount: 1_000, status: 'confirmed', uploaded_by: 'founder-1', confirmed_at: now, created_at: now },
       { id: 'payment-2', order_id: 'order-2', amount: 250, status: 'pending', uploaded_by: 'operations-1', created_at: now },
@@ -60,6 +64,9 @@ describe('business analytics', () => {
     expect(metrics.totalRevenue).toBe(confirmedRevenue)
     expect(metrics.walletBalance).toBe(confirmedRevenue - expenses - withdrawals)
     expect(metrics.netProfit).toBe(confirmedRevenue - expenses)
+    expect(metrics.legacyRecordCount).toBe(2)
+    expect(metrics.legacyQuotedTotal).toBe(1_150)
+    expect(metrics.legacyContactCount).toBe(2)
   })
 
   it('groups paid orders by controlled service', () => {

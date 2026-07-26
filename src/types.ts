@@ -264,6 +264,7 @@ export interface AppSnapshot {
   customers: Customer[]
   tracks: InventoryTrack[]
   orders: Order[]
+  legacyOrders: LegacyOrder[]
   payments: Payment[]
   expenses: Expense[]
   withdrawals: Withdrawal[]
@@ -290,6 +291,11 @@ export interface DashboardMetrics {
   totalCustomers: number
   adSpend: number
   newCustomers: number
+  legacyRecordCount: number
+  legacyQuotedTotal: number
+  legacyContactCount: number
+  legacyFirstDate?: string
+  legacyLastDate?: string
 }
 
 export interface CreateOrderInput {

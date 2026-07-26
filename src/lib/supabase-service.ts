@@ -38,12 +38,13 @@ function assertNoError(error: unknown) {
 
 export const supabaseDataService: DataService = {
   async loadSnapshot(userId: string) {
-    const [services, profiles, customers, tracks, orders, payments, expenses, withdrawals, notifications, audits, transactions] = await Promise.all([
+    const [services, profiles, customers, tracks, orders, legacyOrders, payments, expenses, withdrawals, notifications, audits, transactions] = await Promise.all([
       supabase.from('services').select('*').order('sort_order'),
       supabase.from('profiles').select('*').eq('active', true).order('full_name'),
       supabase.from('customers').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false }),
       loadInventoryTracks(),
       supabase.from('orders').select('*, customer:customers(id,name,phone), service:services(id,code,name,price), assignee:profiles!orders_assigned_to_fkey(id,full_name)').is('deleted_at', null).order('created_at', { ascending: false }),
+      supabase.from('legacy_orders').select('*').order('record_date', { ascending: false }).order('source_ref', { ascending: false }),
       supabase.from('payments').select('*').order('created_at', { ascending: false }),
       supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
       supabase.from('withdrawals').select('*, requester:profiles!withdrawals_requested_by_fkey(id,full_name), approver:profiles!withdrawals_approved_by_fkey(id,full_name)').order('created_at', { ascending: false }),
@@ -51,7 +52,7 @@ export const supabaseDataService: DataService = {
       supabase.from('audit_logs').select('*, actor:profiles!audit_logs_actor_id_fkey(id,full_name)').order('created_at', { ascending: false }).limit(100),
       supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false })
     ])
-    const error = [services, profiles, customers, tracks, orders, payments, expenses, withdrawals, notifications, audits, transactions].find((result) => result.error)?.error
+    const error = [services, profiles, customers, tracks, orders, legacyOrders, payments, expenses, withdrawals, notifications, audits, transactions].find((result) => result.error)?.error
     assertNoError(error)
     return {
       services: services.data ?? [],
@@ -59,6 +60,7 @@ export const supabaseDataService: DataService = {
       customers: customers.data ?? [],
       tracks: tracks.data ?? [],
       orders: (orders.data ?? []) as unknown as AppSnapshot['orders'],
+      legacyOrders: (legacyOrders.data ?? []) as AppSnapshot['legacyOrders'],
       payments: payments.data ?? [],
       expenses: (expenses.data ?? []) as unknown as AppSnapshot['expenses'],
       withdrawals: (withdrawals.data ?? []) as unknown as AppSnapshot['withdrawals'],

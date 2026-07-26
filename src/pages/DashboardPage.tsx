@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, Banknote, CheckCircle2, CircleDollarSign, Clock3, Megaphone, Music2, ShoppingBag, TrendingUp, UsersRound, WalletCards } from 'lucide-react'
+import { Activity, Archive, ArrowRight, Banknote, CheckCircle2, CircleDollarSign, Clock3, FileClock, Megaphone, Music2, ShoppingBag, TrendingUp, UsersRound, WalletCards } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, EmptyState, MoneyStat, PageHeader, StatCard, StatusBadge } from '../components/ui'
@@ -19,6 +19,7 @@ export function DashboardPage() {
   const expenses = getExpenseBreakdown(snapshot).map((item) => ({ ...item, name: expenseCategoryLabels[item.name as keyof typeof expenseCategoryLabels] ?? item.name }))
   const latestOrders = snapshot.orders.slice(0, 6)
   const pendingWithdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'pending').slice(0, 4)
+  const recentLegacyOrders = (snapshot.legacyOrders ?? []).slice(0, 6)
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
 
   return (
@@ -39,9 +40,26 @@ export function DashboardPage() {
         <StatCard label="New customers" value={metrics.newCustomers} icon={<UsersRound size={21} />} trend={`${metrics.totalCustomers} total customers`} />
       </div>
 
+      {metrics.legacyRecordCount > 0 && (
+        <Card className="legacy-summary-card">
+          <span className="legacy-summary-icon"><Archive size={22} /></span>
+          <div className="legacy-summary-copy">
+            <span>Imported historical data</span>
+            <strong>{metrics.legacyRecordCount} records are now available</strong>
+            <p>Quoted values are visible for operational context but are not included in confirmed wallet or revenue totals.</p>
+          </div>
+          <div className="legacy-summary-metrics">
+            <span><small>Quoted total</small><strong>{formatCurrency(metrics.legacyQuotedTotal)}</strong></span>
+            <span><small>Known contacts</small><strong>{metrics.legacyContactCount}</strong></span>
+            <span><small>Date range</small><strong>{metrics.legacyFirstDate && metrics.legacyLastDate ? `${formatDate(metrics.legacyFirstDate)} – ${formatDate(metrics.legacyLastDate)}` : '—'}</strong></span>
+          </div>
+          <StatusBadge status="unverified" />
+        </Card>
+      )}
+
       <div className="dashboard-grid dashboard-charts">
         <Card className="chart-card chart-wide">
-          <div className="card-heading"><div><span>Revenue trend</span><h2>Monthly revenue</h2></div><strong>{formatCurrency(metrics.revenueMonth)}<small>This month</small></strong></div>
+          <div className="card-heading"><div><span>Revenue trend</span><h2>Confirmed and historical values</h2></div><strong>{formatCurrency(metrics.revenueMonth)}<small>Confirmed this month</small></strong></div>
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={monthlyRevenue} margin={{ left: -16, right: 8, top: 12 }}>
@@ -49,11 +67,13 @@ export function DashboardPage() {
                 <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 12 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 11 }} tickFormatter={(value) => `₹${Number(value) / 1000}k`} />
-                <Tooltip contentStyle={{ background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 12 }} formatter={(value) => [formatCurrency(Number(value)), 'Revenue']} />
+                <Tooltip contentStyle={{ background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 12 }} formatter={(value, name) => [formatCurrency(Number(value)), name === 'legacyQuoted' ? 'Historical quoted' : 'Confirmed revenue']} />
                 <Area type="monotone" dataKey="revenue" stroke="#f4c400" strokeWidth={3} fill="url(#revenueFill)" />
+                <Area type="monotone" dataKey="legacyQuoted" stroke="#38bdf8" strokeWidth={2} strokeDasharray="7 5" fill="transparent" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          <div className="chart-series-note"><span><i className="confirmed" />Confirmed revenue</span><span><i className="legacy" />Historical quoted value</span></div>
         </Card>
         <Card className="chart-card">
           <div className="card-heading"><div><span>Sales mix</span><h2>Revenue by service</h2></div></div>
@@ -75,8 +95,32 @@ export function DashboardPage() {
         <div><Music2 size={18} /><span><strong>{metrics.totalInventory}</strong>Inventory tracks</span></div>
         <div><Clock3 size={18} /><span><strong>{metrics.pendingWithdrawals}</strong>Withdrawal requests</span></div>
         <div><Megaphone size={18} /><span><strong>{formatCurrency(metrics.adSpend)}</strong>Meta Ads spend</span></div>
-        <div><Banknote size={18} /><span><strong>{formatCurrency(metrics.totalRevenue)}</strong>Lifetime revenue</span></div>
+        <div><Banknote size={18} /><span><strong>{formatCurrency(metrics.totalRevenue)}</strong>Confirmed lifetime revenue</span></div>
       </div>
+
+      {recentLegacyOrders.length > 0 && (
+        <Card className="table-card legacy-records-card">
+          <div className="card-heading">
+            <div><span>Imported history</span><h2>Latest historical records</h2></div>
+            <span className="record-count">{metrics.legacyRecordCount} total · unverified</span>
+          </div>
+          <div className="responsive-table">
+            <table>
+              <thead><tr><th>Date</th><th>Contact</th><th>Track / note</th><th>Type</th><th className="align-right">Quoted value</th></tr></thead>
+              <tbody>{recentLegacyOrders.map((order) => (
+                <tr key={order.id}>
+                  <td><strong>{formatDate(order.record_date)}</strong><small>{order.source_ref}</small></td>
+                  <td>{order.contact_name || order.phone || 'Unknown contact'}</td>
+                  <td><strong>{order.track_title || order.raw_note || 'Details not supplied'}</strong></td>
+                  <td><StatusBadge status={order.fulfillment_hint} /></td>
+                  <td className="align-right"><strong>{formatCurrency(order.quoted_amount)}</strong><small>Not confirmed</small></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div className="legacy-records-note"><FileClock size={16} /><span>These records are preserved exactly as supplied. Complete customer, service and payment details before promoting them into confirmed orders.</span></div>
+        </Card>
+      )}
 
       <div className="dashboard-grid operational-grid">
         <Card className="table-card latest-orders-card">

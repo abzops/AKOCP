@@ -24,6 +24,9 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
   const approvedWithdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'approved').reduce((sum, withdrawal) => sum + withdrawal.amount, 0)
   const activeStatuses = new Set(['inquiry', 'payment_pending', 'in_progress'])
   const newCustomerBoundary = subMonths(now, 1)
+  const legacyOrders = snapshot.legacyOrders ?? []
+  const legacyContacts = new Set(legacyOrders.map((order) => order.phone || order.contact_name).filter(Boolean))
+  const legacyDates = legacyOrders.map((order) => order.record_date).sort()
   return {
     revenueToday,
     revenueWeek,
@@ -40,7 +43,12 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
     totalInventory: snapshot.tracks.length,
     totalCustomers: snapshot.customers.length,
     adSpend: snapshot.expenses.filter((expense) => expense.category === 'meta_ads').reduce((sum, expense) => sum + expense.amount, 0),
-    newCustomers: snapshot.customers.filter((customer) => isAfter(new Date(customer.created_at), newCustomerBoundary)).length
+    newCustomers: snapshot.customers.filter((customer) => isAfter(new Date(customer.created_at), newCustomerBoundary)).length,
+    legacyRecordCount: legacyOrders.length,
+    legacyQuotedTotal: legacyOrders.reduce((sum, order) => sum + order.quoted_amount, 0),
+    legacyContactCount: legacyContacts.size,
+    legacyFirstDate: legacyDates[0],
+    legacyLastDate: legacyDates.at(-1)
   }
 }
 
@@ -56,7 +64,13 @@ export function getMonthlyRevenue(snapshot: AppSnapshot, months = 6) {
         return paymentDate >= start && paymentDate <= end
       })
       .reduce((sum, payment) => sum + payment.amount, 0)
-    return { month: date.toLocaleString('en-IN', { month: 'short' }), revenue }
+    const legacyQuoted = (snapshot.legacyOrders ?? [])
+      .filter((order) => {
+        const recordDate = new Date(`${order.record_date}T12:00:00`)
+        return recordDate >= start && recordDate <= end
+      })
+      .reduce((sum, order) => sum + order.quoted_amount, 0)
+    return { month: date.toLocaleString('en-IN', { month: 'short' }), revenue, legacyQuoted }
   })
 }
 
