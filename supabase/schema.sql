@@ -804,10 +804,10 @@ revoke insert, update, delete on public.wallet_transactions, public.audit_logs f
 create table if not exists public.ai_settings (
   id smallint primary key default 1 check (id = 1),
   enabled boolean not null default false,
-  primary_model text not null default 'qwen/qwen3.5-122b-a10b'
-    check (primary_model in ('qwen/qwen3.5-122b-a10b', 'openai/gpt-oss-20b')),
+  primary_model text not null default 'qwen/qwen3-next-80b-a3b-instruct'
+    check (primary_model in ('qwen/qwen3-next-80b-a3b-instruct', 'openai/gpt-oss-20b')),
   fallback_model text not null default 'openai/gpt-oss-20b'
-    check (fallback_model in ('qwen/qwen3.5-122b-a10b', 'openai/gpt-oss-20b')),
+    check (fallback_model in ('qwen/qwen3-next-80b-a3b-instruct', 'openai/gpt-oss-20b')),
   daily_request_limit integer not null default 40 check (daily_request_limit between 1 and 1000),
   max_output_tokens integer not null default 800 check (max_output_tokens between 64 and 1200),
   provider_status text not null default 'not_checked'
@@ -1083,8 +1083,8 @@ declare
   settings_row public.ai_settings%rowtype;
 begin
   if not public.is_founder() then raise exception 'Founder permission is required'; end if;
-  if p_primary_model not in ('qwen/qwen3.5-122b-a10b', 'openai/gpt-oss-20b') then raise exception 'Primary model is not allowed'; end if;
-  if p_fallback_model not in ('qwen/qwen3.5-122b-a10b', 'openai/gpt-oss-20b') then raise exception 'Fallback model is not allowed'; end if;
+  if p_primary_model not in ('qwen/qwen3-next-80b-a3b-instruct', 'openai/gpt-oss-20b') then raise exception 'Primary model is not allowed'; end if;
+  if p_fallback_model not in ('qwen/qwen3-next-80b-a3b-instruct', 'openai/gpt-oss-20b') then raise exception 'Fallback model is not allowed'; end if;
   if p_daily_request_limit not between 1 and 1000 then raise exception 'Daily request limit is out of range'; end if;
   if p_max_output_tokens not between 64 and 1200 then raise exception 'Output token limit is out of range'; end if;
 

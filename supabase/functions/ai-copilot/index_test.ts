@@ -2,6 +2,7 @@ import {
   availableTools,
   boundedResult,
   parseToolArguments,
+  providerOptions,
   ProviderError,
   shouldFallback,
 } from "./index.ts";
@@ -73,4 +74,12 @@ Deno.test("fallback excludes quota and caller errors", () => {
     shouldFallback(new Error("network"), "primary", "fallback"),
     false,
   );
+});
+
+Deno.test("Qwen3 Next uses NVIDIA hosted non-thinking sampling options", () => {
+  const options = providerOptions("qwen/qwen3-next-80b-a3b-instruct", 800);
+  assertEquals(options.temperature, 0.6);
+  assertEquals(options.top_p, 0.7);
+  assertEquals(options.max_tokens, 800);
+  assertEquals(JSON.stringify(options).includes("chat_template_kwargs"), false);
 });

@@ -34,6 +34,7 @@ type ProviderResponse = {
 };
 
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+const NVIDIA_QWEN_NEXT = "qwen/qwen3-next-80b-a3b-instruct";
 const MAX_TOOL_ROUNDS = 4;
 const MAX_ROWS = 25;
 const MAX_TOOL_RESULT_CHARS = 16000;
@@ -178,6 +179,18 @@ export class ProviderError extends Error {
   }
 }
 
+export function providerOptions(model: string, maxTokens: number) {
+  const qwenNext = model === NVIDIA_QWEN_NEXT;
+  return {
+    temperature: qwenNext ? 0.6 : 0.2,
+    top_p: qwenNext ? 0.7 : undefined,
+    max_tokens: maxTokens,
+    chat_template_kwargs: model === "qwen/qwen3.5-122b-a10b"
+      ? { enable_thinking: false }
+      : undefined,
+  };
+}
+
 async function callProvider(
   apiKey: string,
   model: string,
@@ -197,11 +210,7 @@ async function callProvider(
       messages,
       tools: tools.length ? tools : undefined,
       tool_choice: tools.length ? (allowTools ? "auto" : "none") : undefined,
-      temperature: 0.2,
-      max_tokens: maxTokens,
-      chat_template_kwargs: model.startsWith("qwen/")
-        ? { enable_thinking: false }
-        : undefined,
+      ...providerOptions(model, maxTokens),
     }),
   });
   const payload = await response.json().catch(() => ({})) as ProviderResponse;
