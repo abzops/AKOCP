@@ -182,6 +182,8 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
       setError(sendError instanceof Error ? sendError.message : 'The copilot could not answer.')
     } finally {
       setLoading(false)
+      // Refresh provider health badge after every call (success or failure)
+      aiService.getSettings().then(setSettings).catch(() => {})
     }
   }
 
