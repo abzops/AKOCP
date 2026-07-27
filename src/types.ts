@@ -216,8 +216,8 @@ export interface AiActionProposal {
 export interface AiSettings {
   id: number
   enabled: boolean
-  primary_model: 'qwen/qwen3.6-27b' | 'openai/gpt-oss-20b'
-  fallback_model: 'qwen/qwen3.6-27b' | 'openai/gpt-oss-20b'
+  primary_model: 'qwen/qwen3.5-122b-a10b' | 'openai/gpt-oss-20b'
+  fallback_model: 'qwen/qwen3.5-122b-a10b' | 'openai/gpt-oss-20b'
   daily_request_limit: number
   max_output_tokens: number
   provider_status: 'not_checked' | 'available' | 'degraded' | 'unavailable'

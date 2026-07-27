@@ -155,6 +155,10 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
   const sendMessage = async (text = input) => {
     const clean = text.trim()
     if (!clean || loading || !profile) return
+    if (!settings?.enabled) {
+      setError(null)
+      return
+    }
     setInput('')
     setError(null)
     setLoading(true)
@@ -356,6 +360,11 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
     [proposals]
   )
 
+  const openAiSettings = () => {
+    onClose()
+    navigate('/settings?tab=ai')
+  }
+
   if (!open || !profile) return null
   return (
     <div className="copilot-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -415,7 +424,20 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
                   <span><Bot size={28} /></span>
                   <h2>Ask about operations</h2>
                   <p>Read live business data, inspect owner-recorded sales, or prepare a controlled change. Nothing changes until you confirm.</p>
-                  <div>{starters.map((starter) => <button key={starter} onClick={() => void sendMessage(starter)}>{starter}</button>)}</div>
+                  {settings?.enabled ? (
+                    <div>{starters.map((starter) => <button key={starter} disabled={loading} onClick={() => void sendMessage(starter)}>{starter}</button>)}</div>
+                  ) : settings ? (
+                    <div className="copilot-disabled-state">
+                      <AlertTriangle size={19} />
+                      <div>
+                        <strong>Copilot is turned off</strong>
+                        <span>{profile.role === 'founder'
+                          ? 'Add NVIDIA_API_KEY to Supabase secrets, then enable the copilot in Founder settings.'
+                          : 'Ask a Founder to configure the provider key and enable the copilot.'}</span>
+                      </div>
+                      {profile.role === 'founder' && <Button variant="secondary" onClick={openAiSettings}>Open AI settings</Button>}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="copilot-messages">

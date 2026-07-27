@@ -33,7 +33,7 @@ type ProviderResponse = {
   error?: { message?: string };
 };
 
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const MAX_TOOL_ROUNDS = 4;
 const MAX_ROWS = 25;
 const MAX_TOOL_RESULT_CHARS = 16000;
@@ -186,7 +186,7 @@ async function callProvider(
   maxTokens: number,
   allowTools: boolean,
 ) {
-  const response = await fetch(GROQ_URL, {
+  const response = await fetch(NVIDIA_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -198,20 +198,21 @@ async function callProvider(
       tools: tools.length ? tools : undefined,
       tool_choice: tools.length ? (allowTools ? "auto" : "none") : undefined,
       temperature: 0.2,
-      max_completion_tokens: maxTokens,
-      reasoning_effort: "none",
-      reasoning_format: "hidden",
+      max_tokens: maxTokens,
+      chat_template_kwargs: model.startsWith("qwen/")
+        ? { enable_thinking: false }
+        : undefined,
     }),
   });
   const payload = await response.json().catch(() => ({})) as ProviderResponse;
   if (!response.ok) {
     throw new ProviderError(
       response.status,
-      payload.error?.message || `Groq request failed (${response.status})`,
+      payload.error?.message || `NVIDIA request failed (${response.status})`,
     );
   }
   const message = payload.choices?.[0]?.message;
-  if (!message) throw new ProviderError(502, "Groq returned an empty response");
+  if (!message) throw new ProviderError(502, "NVIDIA returned an empty response");
   return { message, usage: payload.usage ?? {} };
 }
 
@@ -1119,7 +1120,7 @@ export async function handleRequest(request: Request) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const groqKey = Deno.env.get("GROQ_API_KEY");
+  const nvidiaKey = Deno.env.get("NVIDIA_API_KEY");
   if (!supabaseUrl || !anonKey) {
     return jsonResponse(request, {
       error: "Supabase function environment is incomplete",
@@ -1172,9 +1173,9 @@ export async function handleRequest(request: Request) {
         error: "AI copilot is currently disabled by Founder settings",
       }, 503);
     }
-    if (!groqKey) {
+    if (!nvidiaKey) {
       return jsonResponse(request, {
-        error: "GROQ_API_KEY has not been configured in Supabase secrets",
+        error: "NVIDIA_API_KEY has not been configured in Supabase secrets",
       }, 503);
     }
 
@@ -1234,7 +1235,7 @@ export async function handleRequest(request: Request) {
 
     const result = await runCopilot(
       client,
-      groqKey,
+      nvidiaKey,
       profile.role as Role,
       activeConversationId,
       userId,

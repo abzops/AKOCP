@@ -1,5 +1,6 @@
 import { BadgeIndianRupee, Bot, CheckCircle2, Cloud, Database, Edit3, FileClock, KeyRound, LockKeyhole, Radio, ShieldCheck, UserCog, UsersRound } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, ConfirmDialog, Input, Modal, PageHeader, Select, StatusBadge } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
@@ -8,16 +9,19 @@ import { formatCurrency, formatDate, humanize, initials } from '../lib/format'
 import type { AiSettings, Profile, Role, Service } from '../types'
 
 type SettingsTab = 'services' | 'team' | 'ai' | 'audit' | 'system'
+const settingsTabs: SettingsTab[] = ['services', 'team', 'ai', 'audit', 'system']
 
 export function SettingsPage() {
   const { snapshot } = useAppData()
-  const [tab, setTab] = useState<SettingsTab>('services')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const tab: SettingsTab = settingsTabs.includes(requestedTab as SettingsTab) ? requestedTab as SettingsTab : 'services'
   if (!snapshot) return null
   return (
     <div className="page-stack settings-page">
       <PageHeader eyebrow="Founder controls" title="System settings" description="Manage controlled pricing, access roles, audit history, and application status." />
       <div className="settings-layout">
-        <Card className="settings-nav">{(['services', 'team', 'ai', 'audit', 'system'] as SettingsTab[]).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'services' ? <BadgeIndianRupee size={18} /> : item === 'team' ? <UsersRound size={18} /> : item === 'ai' ? <Bot size={18} /> : item === 'audit' ? <FileClock size={18} /> : <Database size={18} />}<span>{item === 'audit' ? 'Audit log' : item === 'ai' ? 'AI copilot' : item.charAt(0).toUpperCase() + item.slice(1)}</span></button>)}</Card>
+        <Card className="settings-nav">{settingsTabs.map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setSearchParams({ tab: item })}>{item === 'services' ? <BadgeIndianRupee size={18} /> : item === 'team' ? <UsersRound size={18} /> : item === 'ai' ? <Bot size={18} /> : item === 'audit' ? <FileClock size={18} /> : <Database size={18} />}<span>{item === 'audit' ? 'Audit log' : item === 'ai' ? 'AI copilot' : item.charAt(0).toUpperCase() + item.slice(1)}</span></button>)}</Card>
         <div className="settings-content">{tab === 'services' && <ServicesSettings />}{tab === 'team' && <TeamSettings />}{tab === 'ai' && <AiSettingsPanel />}{tab === 'audit' && <AuditSettings />}{tab === 'system' && <SystemSettings />}</div>
       </div>
     </div>
@@ -55,12 +59,12 @@ function AiSettingsPanel() {
     }
   }
   return <Card className="settings-panel ai-settings-panel">
-    <div className="settings-heading"><span><Bot size={21} /></span><div><h2>Operations copilot</h2><p>Groq runs in a protected Edge Function. Every proposed business change still requires confirmation.</p></div></div>
+    <div className="settings-heading"><span><Bot size={21} /></span><div><h2>Operations copilot</h2><p>NVIDIA NIM runs through a protected Edge Function. Every proposed business change still requires confirmation.</p></div></div>
     <form className="ai-settings-form" onSubmit={save}>
       <label className="toggle-row"><div><strong>Enable AI copilot</strong><span>Emergency off switch; the rest of AK OCP continues normally.</span></div><span className="switch"><input type="checkbox" checked={settings.enabled} onChange={(event) => update('enabled', event.target.checked)} /><i /></span></label>
       <div className="form-grid two">
-        <Select label="Primary model" value={settings.primary_model} onChange={(event) => update('primary_model', event.target.value as AiSettings['primary_model'])}><option value="qwen/qwen3.6-27b">Qwen 3.6 27B</option><option value="openai/gpt-oss-20b">GPT OSS 20B</option></Select>
-        <Select label="Fallback model" value={settings.fallback_model} onChange={(event) => update('fallback_model', event.target.value as AiSettings['fallback_model'])}><option value="openai/gpt-oss-20b">GPT OSS 20B</option><option value="qwen/qwen3.6-27b">Qwen 3.6 27B</option></Select>
+        <Select label="Primary model" value={settings.primary_model} onChange={(event) => update('primary_model', event.target.value as AiSettings['primary_model'])}><option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B A10B</option><option value="openai/gpt-oss-20b">GPT OSS 20B</option></Select>
+        <Select label="Fallback model" value={settings.fallback_model} onChange={(event) => update('fallback_model', event.target.value as AiSettings['fallback_model'])}><option value="openai/gpt-oss-20b">GPT OSS 20B</option><option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B A10B</option></Select>
       </div>
       <div className="form-grid two">
         <Input label="Daily prompts per user" type="number" min="1" max="1000" value={settings.daily_request_limit} onChange={(event) => update('daily_request_limit', Number(event.target.value))} required />
@@ -71,7 +75,7 @@ function AiSettingsPanel() {
         <div><strong>Provider health</strong><small>{settings.provider_checked_at ? `Last checked ${formatDate(settings.provider_checked_at, 'long')}` : 'A live check appears after the first successful prompt.'}{settings.provider_error ? ` · ${settings.provider_error}` : ''}</small></div>
         <Badge tone={settings.provider_status === 'available' ? 'green' : settings.provider_status === 'degraded' ? 'yellow' : settings.provider_status === 'unavailable' ? 'red' : 'neutral'}>{humanize(settings.provider_status)}</Badge>
       </div>
-      <div className="security-callout"><KeyRound size={19} /><div><strong>Provider key stays server-side</strong><p>Set GROQ_API_KEY in Supabase Edge Function secrets. It is never saved in GitHub Pages or sent to the browser.</p></div></div>
+      <div className="security-callout"><KeyRound size={19} /><div><strong>Provider key stays server-side</strong><p>Set NVIDIA_API_KEY in Supabase Edge Function secrets. It is never saved in GitHub Pages or sent to the browser.</p></div></div>
       <div className="ai-settings-actions"><Button type="submit" loading={saving}>Save AI controls</Button></div>
     </form>
   </Card>
