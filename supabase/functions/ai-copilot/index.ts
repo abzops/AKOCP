@@ -34,7 +34,7 @@ type ProviderResponse = {
 };
 
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const NVIDIA_QWEN_NEXT = "qwen/qwen3-next-80b-a3b-instruct";
+const NVIDIA_LLAMA_33 = "meta/llama-3.3-70b-instruct";
 const MAX_TOOL_ROUNDS = 4;
 const MAX_ROWS = 25;
 const MAX_TOOL_RESULT_CHARS = 16000;
@@ -76,7 +76,7 @@ function corsHeaders(request: Request) {
       ? origin
       : "https://abzops.github.io",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type",
+      "authorization, x-client-info, apikey, content-type, x-application-name",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Vary": "Origin",
   };
@@ -180,14 +180,10 @@ export class ProviderError extends Error {
 }
 
 export function providerOptions(model: string, maxTokens: number) {
-  const qwenNext = model === NVIDIA_QWEN_NEXT;
   return {
-    temperature: qwenNext ? 0.6 : 0.2,
-    top_p: qwenNext ? 0.7 : undefined,
+    temperature: 0.2,
+    top_p: 0.7,
     max_tokens: maxTokens,
-    chat_template_kwargs: model === "qwen/qwen3.5-122b-a10b"
-      ? { enable_thinking: false }
-      : undefined,
   };
 }
 

@@ -63,8 +63,8 @@ function AiSettingsPanel() {
     <form className="ai-settings-form" onSubmit={save}>
       <label className="toggle-row"><div><strong>Enable AI copilot</strong><span>Emergency off switch; the rest of AK OCP continues normally.</span></div><span className="switch"><input type="checkbox" checked={settings.enabled} onChange={(event) => update('enabled', event.target.checked)} /><i /></span></label>
       <div className="form-grid two">
-        <Select label="Primary model" value={settings.primary_model} onChange={(event) => update('primary_model', event.target.value as AiSettings['primary_model'])}><option value="qwen/qwen3-next-80b-a3b-instruct">Qwen 3 Next 80B A3B</option><option value="openai/gpt-oss-20b">GPT OSS 20B</option></Select>
-        <Select label="Fallback model" value={settings.fallback_model} onChange={(event) => update('fallback_model', event.target.value as AiSettings['fallback_model'])}><option value="openai/gpt-oss-20b">GPT OSS 20B</option><option value="qwen/qwen3-next-80b-a3b-instruct">Qwen 3 Next 80B A3B</option></Select>
+        <Select label="Primary model" value={settings.primary_model} onChange={(event) => update('primary_model', event.target.value as AiSettings['primary_model'])}><option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option><option value="openai/gpt-oss-20b">GPT OSS 20B</option></Select>
+        <Select label="Fallback model" value={settings.fallback_model} onChange={(event) => update('fallback_model', event.target.value as AiSettings['fallback_model'])}><option value="openai/gpt-oss-20b">GPT OSS 20B</option><option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option></Select>
       </div>
       <div className="form-grid two">
         <Input label="Daily prompts per user" type="number" min="1" max="1000" value={settings.daily_request_limit} onChange={(event) => update('daily_request_limit', Number(event.target.value))} required />
