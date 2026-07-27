@@ -7,6 +7,7 @@ import {
   History,
   LoaderCircle,
   MessageSquarePlus,
+  RefreshCw,
   Send,
   ShieldCheck,
   Sparkles,
@@ -85,6 +86,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<AiActionProposal | null>(null)
   const [busyProposal, setBusyProposal] = useState<string | null>(null)
+  const [checkingHealth, setCheckingHealth] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
 
   const reloadConversations = useCallback(async (all = auditAll) => {
@@ -367,6 +369,20 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
     navigate('/settings?tab=ai')
   }
 
+  const checkHealth = async () => {
+    setCheckingHealth(true)
+    try {
+      await aiService.checkProviderHealth()
+      const next = await aiService.getSettings()
+      setSettings(next)
+    } catch {
+      const next = await aiService.getSettings().catch(() => null)
+      if (next) setSettings(next)
+    } finally {
+      setCheckingHealth(false)
+    }
+  }
+
   if (!open || !profile) return null
   return (
     <div className="copilot-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -416,6 +432,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
             <span className="copilot-logo"><Sparkles size={18} /></span>
             <div><strong>Operations Copilot</strong><small>{settings?.enabled ? `${usage?.remaining ?? '—'} prompts left today` : 'Disabled by Founder'}</small></div>
             {settings && <Badge tone={settings.provider_status === 'available' ? 'green' : settings.provider_status === 'degraded' ? 'yellow' : 'neutral'}>{humanize(settings.provider_status)}</Badge>}
+            <IconButton label="Check provider" disabled={checkingHealth} onClick={() => void checkHealth()}><RefreshCw size={16} className={checkingHealth ? 'animate-spin' : ''} /></IconButton>
             <IconButton label="Close copilot" onClick={onClose}><X size={20} /></IconButton>
           </header>
 

@@ -15,14 +15,29 @@ function assertNoError(error: unknown) {
 
 async function functionError(error: unknown) {
   if (typeof error === 'object' && error !== null && 'context' in error) {
-    const context = (error as { context?: Response }).context
+    const context = (error as { context?: unknown }).context
     if (context) {
-      try {
-        const body = await context.clone().json() as { error?: string }
-        if (body.error) return new Error(body.error)
-      } catch {
-        // Fall through to the normalized SDK error.
+      // SDK older path: context is a raw Response object
+      if (typeof (context as Response).clone === 'function') {
+        try {
+          const body = await (context as Response).clone().json() as { error?: string; message?: string }
+          const msg = body.error || body.message
+          if (msg) return new Error(msg)
+        } catch { /* fall through */ }
       }
+      // SDK newer path: context is already a parsed object
+      if (typeof context === 'object' && context !== null) {
+        const body = context as { error?: string; message?: string }
+        const msg = body.error || body.message
+        if (msg) return new Error(msg)
+      }
+    }
+  }
+  // Last resort: read message directly from the error object
+  if (typeof error === 'object' && error !== null) {
+    const value = error as { message?: string }
+    if (value.message && value.message !== 'Edge Function returned a non-2xx status code') {
+      return new Error(value.message)
     }
   }
   return normalizeSupabaseError(error)
@@ -94,6 +109,14 @@ export const aiService = {
     })
     if (error) throw await functionError(error)
     return data as AiCopilotResponse
+  },
+
+  async checkProviderHealth() {
+    const { data, error } = await supabase.functions.invoke('ai-copilot', {
+      body: { action: 'health_check' }
+    })
+    if (error) throw await functionError(error)
+    return data as { provider_status: string }
   },
 
   async deleteConversation(conversationId: string) {

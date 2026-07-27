@@ -33,6 +33,7 @@ function AiSettingsPanel() {
   const [settings, setSettings] = useState<AiSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [checkingHealth, setCheckingHealth] = useState(false)
   useEffect(() => {
     let active = true
     aiService.getSettings()
@@ -58,6 +59,21 @@ function AiSettingsPanel() {
       setSaving(false)
     }
   }
+  const checkHealth = async () => {
+    setCheckingHealth(true)
+    try {
+      await aiService.checkProviderHealth()
+      const next = await aiService.getSettings()
+      setSettings(next)
+      showToast({ type: 'success', title: 'Provider is reachable', message: `Status updated to ${next.provider_status}` })
+    } catch (error) {
+      const next = await aiService.getSettings().catch(() => null)
+      if (next) setSettings(next)
+      showToast({ type: 'error', title: 'Provider check failed', message: error instanceof Error ? error.message : undefined })
+    } finally {
+      setCheckingHealth(false)
+    }
+  }
   return <Card className="settings-panel ai-settings-panel">
     <div className="settings-heading"><span><Bot size={21} /></span><div><h2>Operations copilot</h2><p>NVIDIA NIM runs through a protected Edge Function. Every proposed business change still requires confirmation.</p></div></div>
     <form className="ai-settings-form" onSubmit={save}>
@@ -74,6 +90,7 @@ function AiSettingsPanel() {
         <span><Radio size={18} /></span>
         <div><strong>Provider health</strong><small>{settings.provider_checked_at ? `Last checked ${formatDate(settings.provider_checked_at, 'long')}` : 'A live check appears after the first successful prompt.'}{settings.provider_error ? ` · ${settings.provider_error}` : ''}</small></div>
         <Badge tone={settings.provider_status === 'available' ? 'green' : settings.provider_status === 'degraded' ? 'yellow' : settings.provider_status === 'unavailable' ? 'red' : 'neutral'}>{humanize(settings.provider_status)}</Badge>
+        <Button type="button" variant="secondary" loading={checkingHealth} onClick={() => void checkHealth()}>Check now</Button>
       </div>
       <div className="security-callout"><KeyRound size={19} /><div><strong>Provider key stays server-side</strong><p>Set NVIDIA_API_KEY in Supabase Edge Function secrets. It is never saved in GitHub Pages or sent to the browser.</p></div></div>
       <div className="ai-settings-actions"><Button type="submit" loading={saving}>Save AI controls</Button></div>

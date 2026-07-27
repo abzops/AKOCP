@@ -1147,6 +1147,31 @@ export async function handleRequest(request: Request) {
     const userId = authData.user.id;
 
     const body = asObject(await request.json());
+
+    // Health check: fast 1-token NVIDIA ping, no quota consumed
+    if (body.action === "health_check") {
+      if (!nvidiaKey) {
+        return jsonResponse(request, { provider_status: "unavailable", error: "NVIDIA_API_KEY not configured" }, 503);
+      }
+      try {
+        const { data: settingsRow } = await client.from("ai_settings").select("primary_model").eq("id", 1).single();
+        const modelToCheck = String(settingsRow?.primary_model ?? "meta/llama-3.3-70b-instruct");
+        await callProvider(nvidiaKey, modelToCheck, [{ role: "user", content: "hi" }], [], 1, false);
+        if (serviceKey) {
+          const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+          await admin.from("ai_settings").update({ provider_status: "available", provider_checked_at: new Date().toISOString(), provider_error: null }).eq("id", 1);
+        }
+        return jsonResponse(request, { provider_status: "available" });
+      } catch (checkError) {
+        const msg = checkError instanceof Error ? checkError.message.slice(0, 500) : "Health check failed";
+        if (serviceKey) {
+          const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+          await admin.from("ai_settings").update({ provider_status: "unavailable", provider_checked_at: new Date().toISOString(), provider_error: msg }).eq("id", 1);
+        }
+        return jsonResponse(request, { provider_status: "unavailable", error: msg }, 502);
+      }
+    }
+
     const message = textValue(body.message, "message", {
       required: true,
       max: 4000,
