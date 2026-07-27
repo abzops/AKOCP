@@ -111,6 +111,78 @@ export const aiService = {
     return data as AiCopilotResponse
   },
 
+  async streamMessage(
+    conversationId: string | null,
+    message: string,
+    onChunk: (text: string) => void
+  ) {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData.session?.access_token
+    if (!token) throw new Error("Not authenticated")
+
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-copilot`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ conversationId: conversationId || undefined, message, stream: true })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      try {
+        const errorJson = JSON.parse(errorText)
+        throw new Error(errorJson.error || "Edge Function failed")
+      } catch {
+        throw new Error(`Edge Function failed: ${response.status} ${response.statusText}`)
+      }
+    }
+
+    if (!response.body) throw new Error("No response body")
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder("utf-8")
+    let buffer = ""
+    let finalData: AiCopilotResponse | null = null
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      
+      let boundary = buffer.indexOf("\n\n")
+      while (boundary !== -1) {
+        const chunk = buffer.slice(0, boundary).trim()
+        buffer = buffer.slice(boundary + 2)
+        boundary = buffer.indexOf("\n\n")
+        
+        if (!chunk.startsWith("data: ")) continue
+        const dataStr = chunk.slice(6).trim()
+        if (dataStr === "[DONE]") continue
+        
+        try {
+          const payload = JSON.parse(dataStr)
+          if (payload.type === "chunk" && payload.content) {
+            onChunk(payload.content)
+          } else if (payload.type === "done") {
+            finalData = payload as unknown as AiCopilotResponse
+          } else if (payload.type === "error") {
+            throw new Error(payload.error || "Streaming error")
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== "Unexpected end of JSON input" && !e.message.includes("is not valid JSON")) {
+            throw e
+          }
+        }
+      }
+    }
+
+    if (!finalData) throw new Error("Stream closed before completion")
+    return finalData
+  },
+
   async checkProviderHealth() {
     const { data, error } = await supabase.functions.invoke('ai-copilot', {
       body: { action: 'health_check' }

@@ -194,6 +194,7 @@ async function callProvider(
   tools: ToolDefinition[],
   maxTokens: number,
   allowTools: boolean,
+  onChunk?: (text: string) => void,
 ) {
   const response = await fetch(NVIDIA_URL, {
     method: "POST",
@@ -206,19 +207,84 @@ async function callProvider(
       messages,
       tools: tools.length ? tools : undefined,
       tool_choice: tools.length ? (allowTools ? "auto" : "none") : undefined,
+      stream: !!onChunk,
       ...providerOptions(model, maxTokens),
     }),
   });
-  const payload = await response.json().catch(() => ({})) as ProviderResponse;
+
   if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as ProviderResponse;
     throw new ProviderError(
       response.status,
       payload.error?.message || `NVIDIA request failed (${response.status})`,
     );
   }
-  const message = payload.choices?.[0]?.message;
-  if (!message) throw new ProviderError(502, "NVIDIA returned an empty response");
-  return { message, usage: payload.usage ?? {} };
+
+  if (!onChunk || !response.body) {
+    const payload = await response.json() as ProviderResponse;
+    const message = payload.choices?.[0]?.message;
+    if (!message) throw new ProviderError(502, "NVIDIA returned an empty response");
+    return { message, usage: payload.usage ?? {} };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let finalContent = "";
+  const finalToolCalls: ToolCall[] = [];
+  let usage: ProviderUsage = {};
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const chunk = buffer.slice(0, boundary).trim();
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+      
+      if (!chunk.startsWith("data: ")) continue;
+      const dataStr = chunk.slice(6).trim();
+      if (dataStr === "[DONE]") continue;
+      
+      try {
+        const payload = JSON.parse(dataStr);
+        if (payload.usage) usage = payload.usage;
+        const delta = payload.choices?.[0]?.delta;
+        if (!delta) continue;
+        
+        if (delta.content) {
+          finalContent += delta.content;
+          onChunk(delta.content);
+        }
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const index = tc.index;
+            if (!finalToolCalls[index]) {
+              finalToolCalls[index] = { id: tc.id ?? "", type: "function", function: { name: tc.function?.name ?? "", arguments: tc.function?.arguments ?? "" } };
+            } else {
+              if (tc.function?.name) finalToolCalls[index].function.name += tc.function.name;
+              if (tc.function?.arguments) finalToolCalls[index].function.arguments += tc.function.arguments;
+            }
+          }
+        }
+      } catch (e) {
+        // ignore parse errors for partial chunks
+      }
+    }
+  }
+
+  const message: ChatMessage = {
+    role: "assistant",
+    content: finalContent || null,
+  };
+  if (finalToolCalls.length > 0) {
+    message.tool_calls = finalToolCalls.filter(Boolean);
+  }
+
+  return { message, usage };
 }
 
 async function callWithFallback(
@@ -229,6 +295,7 @@ async function callWithFallback(
   tools: ToolDefinition[],
   maxTokens: number,
   allowTools: boolean,
+  onChunk?: (text: string) => void,
 ) {
   try {
     const response = await callProvider(
@@ -238,6 +305,7 @@ async function callWithFallback(
       tools,
       maxTokens,
       allowTools,
+      onChunk,
     );
     return { ...response, model: primary, fallbackUsed: false };
   } catch (error) {
@@ -250,6 +318,7 @@ async function callWithFallback(
       tools,
       maxTokens,
       allowTools,
+      onChunk,
     );
     return { ...response, model: fallback, fallbackUsed: true };
   }
@@ -1024,6 +1093,7 @@ async function runCopilot(
   userId: string,
   history: ChatMessage[],
   settings: Json,
+  onChunk?: (text: string) => void,
 ) {
   const tools = availableTools(role);
   const messages: ChatMessage[] = [{
@@ -1038,6 +1108,7 @@ async function runCopilot(
   let finalContent = "";
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+    const isFinalRound = round === MAX_TOOL_ROUNDS;
     const response = await callWithFallback(
       apiKey,
       String(settings.primary_model),
@@ -1045,7 +1116,8 @@ async function runCopilot(
       messages,
       tools,
       Number(settings.max_output_tokens),
-      round < MAX_TOOL_ROUNDS,
+      !isFinalRound,
+      onChunk,
     );
     inputTokens += response.usage.prompt_tokens ?? 0;
     outputTokens += response.usage.completion_tokens ?? 0;
@@ -1054,7 +1126,7 @@ async function runCopilot(
     const toolCalls = response.message.tool_calls ?? [];
     finalContent = response.message.content?.trim() ?? "";
 
-    if (!toolCalls.length || round === MAX_TOOL_ROUNDS) break;
+    if (!toolCalls.length || isFinalRound) break;
 
     messages.push({
       role: "assistant",
@@ -1217,51 +1289,93 @@ export async function handleRequest(request: Request) {
       return jsonResponse(request, { error: usageError.message }, status);
     }
 
+    const isStream = body.stream === true;
     let conversationId = requestedConversationId;
     if (conversationId) {
-      const { data: conversation, error } = await client.from(
-        "ai_conversations",
-      ).select("id,owner_id").eq("id", conversationId).maybeSingle();
+      const { data: conversation, error } = await client.from("ai_conversations")
+        .select("id,owner_id").eq("id", conversationId).maybeSingle();
       if (error) throw error;
       if (!conversation || conversation.owner_id !== userId) {
         return jsonResponse(request, { error: "Conversation not found" }, 404);
       }
     } else {
       const title = message.replace(/\s+/g, " ").slice(0, 60);
-      const { data: conversation, error } = await client
-        .from("ai_conversations")
-        .insert({ owner_id: userId, title })
-        .select("id")
-        .single();
+      const { data: conversation, error } = await client.from("ai_conversations")
+        .insert({ owner_id: userId, title }).select("id").single();
       if (error) throw error;
       conversationId = conversation.id;
     }
-
     const activeConversationId = conversationId;
-    if (!activeConversationId) {
-      throw new Error("Conversation could not be created");
-    }
+    if (!activeConversationId) throw new Error("Conversation could not be created");
 
-    const { error: messageError } = await client
-      .from("ai_messages")
-      .insert({
-        conversation_id: activeConversationId,
-        sender: "user",
-        content: message,
-      });
+    const { error: messageError } = await client.from("ai_messages").insert({
+      conversation_id: activeConversationId,
+      sender: "user",
+      content: message,
+    });
     if (messageError) throw messageError;
 
     const { data: storedMessages, error: historyError } = await client
-      .from("ai_messages")
-      .select("sender,content")
+      .from("ai_messages").select("sender,content")
       .eq("conversation_id", activeConversationId)
-      .order("created_at", { ascending: false })
-      .limit(12);
+      .order("created_at", { ascending: false }).limit(12);
     if (historyError) throw historyError;
     const history = (storedMessages ?? []).reverse().map((item) => ({
       role: item.sender as "user" | "assistant",
       content: item.content,
     }));
+
+    if (isStream) {
+      const stream = new TransformStream();
+      const writer = stream.writable.getWriter();
+      const encoder = new TextEncoder();
+      
+      const onChunk = (text: string) => {
+        writer.write(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: text })}\n\n`));
+      };
+
+      (async () => {
+        try {
+          const result = await runCopilot(
+            client, nvidiaKey, profile.role as Role, activeConversationId,
+            userId, history, settings as Json, onChunk,
+          );
+          
+          const { data: assistantMessage, error: assistantError } = await client
+            .from("ai_messages")
+            .insert({
+              conversation_id: activeConversationId,
+              sender: "assistant",
+              content: result.message,
+              model: result.model,
+            })
+            .select("*").single();
+          if (assistantError) throw assistantError;
+
+          await client.rpc("record_ai_usage_tokens", {
+            p_input_tokens: result.inputTokens,
+            p_output_tokens: result.outputTokens,
+          });
+
+          writer.write(encoder.encode(`data: ${JSON.stringify({
+            type: "done",
+            message: assistantMessage,
+            proposals: result.proposals,
+            model: result.model,
+            fallbackUsed: result.fallbackUsed,
+          })}\n\n`));
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : "Unknown error";
+          writer.write(encoder.encode(`data: ${JSON.stringify({ type: "error", error: errMsg })}\n\n`));
+        } finally {
+          writer.close();
+        }
+      })();
+
+      return new Response(stream.readable, {
+        headers: { ...corsHeaders(request.headers.get("origin") || "*"), "Content-Type": "text/event-stream" },
+      });
+    }
 
     const result = await runCopilot(
       client,

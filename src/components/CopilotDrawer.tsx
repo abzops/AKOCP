@@ -87,6 +87,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
   const [confirming, setConfirming] = useState<AiActionProposal | null>(null)
   const [busyProposal, setBusyProposal] = useState<string | null>(null)
   const [checkingHealth, setCheckingHealth] = useState(false)
+  const [streamingText, setStreamingText] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
 
   const reloadConversations = useCallback(async (all = auditAll) => {
@@ -172,14 +173,18 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
       created_at: new Date().toISOString()
     }])
     try {
-      const response = await aiService.sendMessage(conversationId, clean)
-      setConversationId(response.conversationId)
-      setUsage(response.usage)
-      const content = await aiService.getConversation(response.conversationId)
+      const response = await aiService.streamMessage(conversationId, clean, (text) => {
+        setStreamingText(text)
+      })
+      setStreamingText(null)
+      setConversationId(response.message.conversation_id)
+      if (response.usage) setUsage(response.usage)
+      const content = await aiService.getConversation(response.message.conversation_id)
       setMessages(content.messages)
       setProposals(content.proposals)
       await reloadConversations(false)
     } catch (sendError) {
+      setStreamingText(null)
       setMessages((current) => current.filter((item) => !item.id.startsWith('local-')))
       setError(sendError instanceof Error ? sendError.message : 'The copilot could not answer.')
     } finally {
@@ -477,7 +482,13 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
                       onCancel={() => void cancelProposal(proposal)}
                     />
                   ))}
-                  {loading && <article className="copilot-message assistant thinking"><span><Sparkles size={15} /></span><div><LoaderCircle className="animate-spin" size={17} /><p>Checking the permitted records…</p></div></article>}
+                  {loading && !streamingText && <article className="copilot-message assistant thinking"><span><Sparkles size={15} /></span><div><LoaderCircle className="animate-spin" size={17} /><p>Checking the permitted records…</p></div></article>}
+                  {streamingText && (
+                    <article className="copilot-message assistant">
+                      <span><Sparkles size={15} /></span>
+                      <div><p>{streamingText}</p></div>
+                    </article>
+                  )}
                 </div>
               )}
             {error && <div className="copilot-error"><AlertTriangle size={17} /><span>{error}</span></div>}
