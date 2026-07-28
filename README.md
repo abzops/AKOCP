@@ -15,7 +15,9 @@ The interface follows the supplied brand system: premium black surfaces, `#F4C40
 - customer lifetime value and order history
 - immutable wallet ledger from confirmed payments, expenses, and approved withdrawals
 - Founder-controlled expenses, service pricing, withdrawal review, team roles, and audit view
-- realtime order/payment/withdrawal/notification refresh
+- targeted realtime refresh, mobile pull-to-refresh, and explicit PWA update handling
+- server-paged inventory search that loads 50 tracks at a time
+- Founder-only customer privacy purge with anonymous financial retention
 - IndexedDB snapshot cache and offline read-only behavior
 - dashboard and analytics for services, tracks, customers, languages, costs, and revenue
 - CSV exports, dark/light modes, global search, keyboard shortcuts, and installable PWA support
@@ -37,6 +39,16 @@ Production configuration is in `.env.production`. The Supabase anon key is inten
 2. Run [supabase/schema.sql](supabase/schema.sql) as one script.
 3. Register the first account through the app. It becomes `founder`; later accounts default to `operations`.
 4. In Authentication settings, choose whether email confirmation is required.
+
+For an existing AK OCP project, apply migrations in `supabase/migrations` in filename order and deploy both Edge Functions:
+
+```powershell
+npx supabase db push
+npx supabase functions deploy ai-copilot
+npx supabase functions deploy customer-privacy-purge
+```
+
+Deploy the database migration and Edge Function before pushing the matching frontend release.
 
 The schema creates all tables, indexes, search support, RLS policies, storage buckets, functions, realtime publication entries, service seeds, audit triggers, wallet controls, and notifications. Run it before creating production data.
 

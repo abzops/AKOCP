@@ -139,9 +139,24 @@ function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): void })
   const [form, setForm] = useState<CreateOrderInput>(emptyOrderForm)
   const [trackSearch, setTrackSearch] = useState('')
   const [selectedTrack, setSelectedTrack] = useState<InventoryTrack | null>(null)
+  const [matches, setMatches] = useState<InventoryTrack[]>([])
+  useEffect(() => {
+    if (!open || selectedTrack || trackSearch.trim().length < 2) {
+      setMatches([])
+      return
+    }
+    let active = true
+    const timer = window.setTimeout(() => {
+      service.searchInventory({ query: trackSearch, sort: 'orders', limit: 6 }).then((result) => {
+        if (active) setMatches(result.items)
+      }).catch(() => {
+        if (active) setMatches([])
+      })
+    }, 250)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [open, selectedTrack, service, trackSearch])
   if (!snapshot || !profile) return null
   const update = (key: keyof CreateOrderInput, value: string) => setForm((current) => ({ ...current, [key]: value }))
-  const matches = trackSearch.trim().length >= 2 ? snapshot.tracks.filter((track) => normalizeSearch(`${track.track_name} ${track.english_title} ${track.malayalam_title} ${track.tags.join(' ')}`).includes(normalizeSearch(trackSearch))).slice(0, 6) : []
   const existingService = snapshot.services.find((item) => item.code === 'EX250')
   const customerMatch = snapshot.customers.find((customer) => customer.phone === form.phone.replace(/\D/g, '').slice(-10))
   const chooseTrack = (track: InventoryTrack) => {

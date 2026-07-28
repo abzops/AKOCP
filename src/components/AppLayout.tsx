@@ -21,7 +21,7 @@ import {
   WifiOff,
   X
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
@@ -51,7 +51,7 @@ const pageTitles: Record<string, string> = {
 
 export function AppLayout() {
   const { profile, signOut } = useAuth()
-  const { snapshot, offline, refreshing, refresh, service, execute, toasts, dismissToast } = useAppData()
+  const { snapshot, offline, refreshing, realtimeStatus, refresh, service, execute, toasts, dismissToast } = useAppData()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -59,6 +59,10 @@ export function AppLayout() {
   const [copilotOpen, setCopilotOpen] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('akocp-theme') ?? 'dark')
   const [installEvent, setInstallEvent] = useState<any>(null)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [applyUpdate, setApplyUpdate] = useState<null | (() => void)>(null)
+  const mainColumnRef = useRef<HTMLDivElement | null>(null)
+  const pullDistanceRef = useRef(0)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -94,6 +98,63 @@ export function AppLayout() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [navigate])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const update = (event as CustomEvent<() => void>).detail
+      setApplyUpdate(() => update)
+    }
+    window.addEventListener('akocp:pwa-update', handler)
+    return () => window.removeEventListener('akocp:pwa-update', handler)
+  }, [])
+
+  useEffect(() => {
+    const node = mainColumnRef.current
+    if (!node) return
+    let startX = 0
+    let startY = 0
+    let tracking = false
+    const blocked = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null
+      return !element || Boolean(element.closest('input,textarea,select,[role="dialog"]')) || document.body.classList.contains('modal-open')
+    }
+    const onStart = (event: TouchEvent) => {
+      if (window.innerWidth > 800 || window.scrollY > 0 || blocked(event.target) || event.touches.length !== 1) return
+      startX = event.touches[0].clientX
+      startY = event.touches[0].clientY
+      tracking = true
+    }
+    const onMove = (event: TouchEvent) => {
+      if (!tracking) return
+      const deltaX = event.touches[0].clientX - startX
+      const deltaY = event.touches[0].clientY - startY
+      if (deltaY <= 0 || Math.abs(deltaX) > Math.abs(deltaY)) {
+        tracking = false
+        setPullDistance(0)
+        return
+      }
+      event.preventDefault()
+      const distance = Math.min(86, deltaY * 0.55)
+      pullDistanceRef.current = distance
+      setPullDistance(distance)
+    }
+    const onEnd = () => {
+      if (tracking && pullDistanceRef.current >= 64) void refresh()
+      tracking = false
+      pullDistanceRef.current = 0
+      setPullDistance(0)
+    }
+    node.addEventListener('touchstart', onStart, { passive: true })
+    node.addEventListener('touchmove', onMove, { passive: false })
+    node.addEventListener('touchend', onEnd)
+    node.addEventListener('touchcancel', onEnd)
+    return () => {
+      node.removeEventListener('touchstart', onStart)
+      node.removeEventListener('touchmove', onMove)
+      node.removeEventListener('touchend', onEnd)
+      node.removeEventListener('touchcancel', onEnd)
+    }
+  }, [refresh])
 
   const closeSidebar = () => setSidebarOpen(false)
   const handleInstall = async () => {
@@ -135,7 +196,8 @@ export function AppLayout() {
       </aside>
       {sidebarOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={closeSidebar} />}
 
-      <div className="main-column">
+      <div className="main-column" ref={mainColumnRef}>
+        <div className={cn('pull-refresh-indicator', (pullDistance > 0 || refreshing) && 'visible')} style={{ transform: `translateY(${refreshing ? 12 : Math.max(-36, pullDistance - 36)}px)` }}><RefreshCw size={17} className={refreshing ? 'animate-spin' : ''} /><span>{refreshing ? 'Refreshing live data…' : pullDistance >= 64 ? 'Release to refresh' : 'Pull to refresh'}</span></div>
         <header className="topbar">
           <div className="topbar-left">
             <IconButton label="Open navigation" className="menu-button" onClick={() => setSidebarOpen(true)}><Menu size={21} /></IconButton>
@@ -148,6 +210,7 @@ export function AppLayout() {
           </button>
           <div className="topbar-actions">
             {offline && <span className="offline-pill"><WifiOff size={14} /> Offline</span>}
+            {!offline && <span className={cn('live-pill', realtimeStatus !== 'live' && 'reconnecting')}>{realtimeStatus === 'live' ? 'Live' : 'Reconnecting'}</span>}
             <IconButton label="Open operations copilot" className="copilot-trigger" onClick={() => setCopilotOpen(true)}><Bot size={18} /></IconButton>
             <IconButton label="Refresh data" onClick={() => void refresh()} className={refreshing ? 'spin-child' : ''}><RefreshCw size={18} /></IconButton>
             <IconButton label={theme === 'dark' ? 'Use light mode' : 'Use dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</IconButton>
@@ -186,7 +249,7 @@ export function AppLayout() {
         </header>
 
         {offline && <div className="offline-banner"><WifiOff size={15} /> You are viewing cached data. Changes are disabled until the connection returns.</div>}
-        <main className="app-content"><Outlet /></main>
+        <main className="app-content"><Outlet /><div className="last-synced">Last synced {snapshot ? fromNow(snapshot.syncedAt) : '—'}</div></main>
         <nav className="mobile-nav" aria-label="Mobile navigation">
           {visibleNav.slice(0, 5).map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/'}><Icon size={20} /><span>{label}</span></NavLink>)}
         </nav>
@@ -196,22 +259,38 @@ export function AppLayout() {
       <CopilotDrawer open={copilotOpen} onClose={() => setCopilotOpen(false)} />
       <button className="mobile-fab" aria-label="Create order" onClick={() => navigate('/orders?new=1')}><Plus size={23} /></button>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      {applyUpdate && <div className="pwa-update-banner"><div><strong>Update available</strong><span>A new AK OCP version is ready.</span></div><Button onClick={() => { applyUpdate(); setApplyUpdate(null) }}>Update now</Button><IconButton label="Dismiss update" onClick={() => setApplyUpdate(null)}><X size={17} /></IconButton></div>}
     </div>
   )
 }
 
 function GlobalSearch({ open, onClose }: { open: boolean; onClose(): void }) {
   const [query, setQuery] = useState('')
-  const { snapshot } = useAppData()
+  const [trackResults, setTrackResults] = useState<Array<{ type: string; title: string; subtitle: string; to: string }>>([])
+  const { snapshot, service } = useAppData()
   const navigate = useNavigate()
+  useEffect(() => {
+    if (!open || query.trim().length < 2) {
+      setTrackResults([])
+      return
+    }
+    let active = true
+    const timer = window.setTimeout(() => {
+      service.searchInventory({ query, sort: 'orders', limit: 5 }).then((page) => {
+        if (active) setTrackResults(page.items.map((track) => ({ type: 'Track', title: track.track_name, subtitle: `${track.language} · ${track.total_orders} orders`, to: '/inventory' })))
+      }).catch(() => {
+        if (active) setTrackResults([])
+      })
+    }, 250)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [open, query, service])
   const results = useMemo(() => {
     if (!snapshot || !query.trim()) return []
     const needle = normalizeSearch(query)
     const orderResults = snapshot.orders.filter((order) => normalizeSearch(`${order.order_number} ${order.track_name} ${order.customer?.name} ${order.customer?.phone}`).includes(needle)).slice(0, 5).map((order) => ({ type: 'Order', title: `${order.order_number} · ${order.track_name}`, subtitle: order.customer?.name ?? '', to: '/orders' }))
-    const trackResults = snapshot.tracks.filter((track) => normalizeSearch(`${track.track_name} ${track.english_title} ${track.malayalam_title} ${track.tags.join(' ')}`).includes(needle)).slice(0, 5).map((track) => ({ type: 'Track', title: track.track_name, subtitle: `${track.language} · ${track.total_orders} orders`, to: '/inventory' }))
     const customerResults = snapshot.customers.filter((customer) => normalizeSearch(`${customer.name} ${customer.phone} ${customer.whatsapp}`).includes(needle)).slice(0, 5).map((customer) => ({ type: 'Customer', title: customer.name, subtitle: customer.phone, to: '/customers' }))
     return [...orderResults, ...trackResults, ...customerResults].slice(0, 12)
-  }, [query, snapshot])
+  }, [query, snapshot, trackResults])
   const close = useCallback(() => { setQuery(''); onClose() }, [onClose])
   const choose = useCallback((to: string) => { navigate(to); close() }, [close, navigate])
   return (

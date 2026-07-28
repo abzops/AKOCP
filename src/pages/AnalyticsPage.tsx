@@ -1,24 +1,33 @@
 import { BarChart3, CircleDollarSign, Crown, Download, Languages, Music2, ShoppingBag, TrendingUp, UsersRound } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Badge, Button, Card, MoneyStat, PageHeader, Select, StatCard } from '../components/ui'
 import { useAppData } from '../context/AppDataContext'
 import { getDashboardMetrics, getExpenseBreakdown, getLanguageOrders, getMonthlyRevenue, getServiceRevenue } from '../lib/analytics'
 import { downloadCsv, expenseCategoryLabels, formatCurrency } from '../lib/format'
-import type { AppSnapshot } from '../types'
+import type { AppSnapshot, InventoryTrack } from '../types'
 
 const colors = ['#f4c400', '#f59e0b', '#f97316', '#ec4899', '#8b5cf6', '#38bdf8', '#22c55e']
 
 export function AnalyticsPage() {
-  const { snapshot, metrics } = useAppData()
+  const { snapshot, metrics, service } = useAppData()
   const [range, setRange] = useState('all')
+  const [topTracks, setTopTracks] = useState<InventoryTrack[]>([])
+  useEffect(() => {
+    let active = true
+    service.searchInventory({ sort: 'revenue', limit: 8 }).then((result) => {
+      if (active) setTopTracks(result.items)
+    }).catch(() => {
+      if (active) setTopTracks([])
+    })
+    return () => { active = false }
+  }, [service, snapshot?.inventorySummary])
   const filtered = useMemo(() => snapshot ? filterSnapshot(snapshot, range) : null, [range, snapshot])
   if (!snapshot || !filtered || !metrics) return null
   const monthly = getMonthlyRevenue(filtered, range === 'all' ? 12 : 6)
   const serviceRevenue = getServiceRevenue(filtered)
   const languages = getLanguageOrders(filtered)
   const expenses = getExpenseBreakdown(filtered).map((item) => ({ ...item, name: expenseCategoryLabels[item.name as keyof typeof expenseCategoryLabels] ?? item.name }))
-  const topTracks = [...filtered.tracks].sort((a, b) => b.lifetime_revenue - a.lifetime_revenue).slice(0, 8)
   const topCustomers = [...filtered.customers].sort((a, b) => b.lifetime_revenue - a.lifetime_revenue).slice(0, 6)
   const paidOrders = filtered.orders.filter((order) => order.payment_status === 'confirmed')
   const recordedSales = filtered.recordedSales.filter((sale) => sale.verified)

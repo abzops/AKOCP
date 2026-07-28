@@ -48,7 +48,7 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
     completedOrders: snapshot.orders.filter((order) => ['completed', 'delivered'].includes(order.status)).length,
     completedToday: snapshot.orders.filter((order) => order.completed_at && isSameDay(new Date(order.completed_at), now)).length,
     pendingWithdrawals: snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'pending').length,
-    totalInventory: snapshot.tracks.length,
+    totalInventory: snapshot.inventorySummary.totalAssets,
     totalCustomers: allContacts.size,
     adSpend: snapshot.expenses.filter((expense) => expense.category === 'meta_ads').reduce((sum, expense) => sum + expense.amount, 0),
     newCustomers: newContacts.size,

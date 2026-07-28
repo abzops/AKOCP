@@ -3,3 +3,5 @@ project_id = "cqptdpkhaiomitwzjysp"
 [functions.ai-copilot]
 verify_jwt = true
 
+[functions.customer-privacy-purge]
+verify_jwt = true

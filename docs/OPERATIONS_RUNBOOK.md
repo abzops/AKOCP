@@ -23,7 +23,9 @@
 ## Recovery and controls
 
 - The app caches the last successful snapshot for read-only offline access.
-- Financial rows are soft-deleted or immutable; no destructive UI is exposed.
+- A Founder customer privacy purge removes identifying operational data and proofs while preserving anonymous wallet totals and a content-free tombstone.
+- A privacy purge requires typing the exact customer name. Review the affected counts before confirming.
+- If proof cleanup reports `failed`, the cleanup job is retained and retried by the purge Edge Function.
 - The wallet derives from its transaction ledger, not an editable balance field.
 - Audit logs capture changes to operational and financial tables.
 - Enable Supabase backups or a scheduled `pg_dump` before relying on the system for production operations.

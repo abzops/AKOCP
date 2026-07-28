@@ -18,7 +18,7 @@ function snapshot(): AppSnapshot {
     }],
     profiles: [],
     customers: [],
-    tracks: [],
+    inventorySummary: { totalAssets: 0, totalRevenue: 0, reusedAssets: 0, topTrack: null, languages: [] },
     orders: [{
       id: '00000000-0000-4000-8000-000000000002',
       order_number: 'AK-1',

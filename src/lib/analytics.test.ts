@@ -19,7 +19,7 @@ function createSnapshot(): AppSnapshot {
     services,
     profiles: [],
     customers: [],
-    tracks: [],
+    inventorySummary: { totalAssets: 0, totalRevenue: 0, reusedAssets: 0, topTrack: null, languages: [] },
     orders: [{
       id: 'order-1',
       order_number: 'AK-260715-001',

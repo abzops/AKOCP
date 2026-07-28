@@ -264,7 +264,7 @@ export interface AppSnapshot {
   services: Service[]
   profiles: Profile[]
   customers: Customer[]
-  tracks: InventoryTrack[]
+  inventorySummary: InventorySummary
   orders: Order[]
   recordedSales: RecordedSale[]
   payments: Payment[]
@@ -275,6 +275,64 @@ export interface AppSnapshot {
   walletTransactions: WalletTransaction[]
   syncedAt: string
 }
+
+export type InventorySort = 'recent' | 'orders' | 'revenue' | 'name'
+
+export interface InventoryQuery {
+  query?: string
+  language?: string
+  sort?: InventorySort
+  cursor?: string | null
+  limit?: number
+}
+
+export interface InventorySummary {
+  totalAssets: number
+  totalRevenue: number
+  reusedAssets: number
+  topTrack: Pick<InventoryTrack, 'id' | 'track_name' | 'language' | 'lifetime_revenue'> | null
+  languages: string[]
+}
+
+export interface InventoryPageResult {
+  items: InventoryTrack[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+export interface CustomerPurgeAffected {
+  customers: number
+  orders: number
+  payments: number
+  recordedSales: number
+  proofs: number
+  notifications: number
+  aiProposals: number
+}
+
+export interface CustomerPurgePreview {
+  customerName: string
+  affected: CustomerPurgeAffected
+  retainedFinancialAmount: number
+}
+
+export interface CustomerPurgeResult {
+  purgeId: string
+  affected: CustomerPurgeAffected
+  retainedFinancialAmount: number
+  proofCleanupStatus: 'pending' | 'completed' | 'failed'
+}
+
+export type RefreshDomain =
+  | 'services'
+  | 'profiles'
+  | 'customers'
+  | 'orders'
+  | 'payments'
+  | 'inventory'
+  | 'finance'
+  | 'notifications'
+  | 'recordedSales'
 
 export interface DashboardMetrics {
   revenueToday: number
@@ -326,6 +384,12 @@ export interface CreateTrackInput {
 
 export interface DataService {
   loadSnapshot(userId: string): Promise<AppSnapshot>
+  loadDomains(snapshot: AppSnapshot, userId: string, domains: RefreshDomain[]): Promise<AppSnapshot>
+  getInventorySummary(): Promise<InventorySummary>
+  searchInventory(query: InventoryQuery): Promise<InventoryPageResult>
+  getInventoryTrackOrders(trackId: string): Promise<Order[]>
+  previewCustomerPurge(customerId: string): Promise<CustomerPurgePreview>
+  purgeCustomer(customerId: string, confirmationName: string): Promise<CustomerPurgeResult>
   createOrder(input: CreateOrderInput, actor: Profile): Promise<void>
   updateOrderStatus(orderId: string, status: OrderStatus, actor: Profile): Promise<void>
   uploadPayment(orderId: string, amount: number, upiReference: string, file: File | null, actor: Profile): Promise<void>

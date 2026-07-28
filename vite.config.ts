@@ -22,7 +22,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Abhinand Karaokes - Operations Control Center',
@@ -45,18 +45,9 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/AKOCP/index.html',
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/cqptdpkhaiomitwzjysp\.supabase\.co\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'akocp-supabase',
-              networkTimeoutSeconds: 8,
-              expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 }
-            }
-          }
-        ]
+        runtimeCaching: []
       }
     })
   ],
