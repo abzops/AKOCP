@@ -7,7 +7,7 @@ import { downloadCsv, formatCurrency, formatDate } from '../lib/format'
 import type { CreateTrackInput, InventoryQuery, InventorySort, InventoryTrack, Order } from '../types'
 
 const languages = ['Malayalam', 'Tamil', 'Hindi', 'English', 'Kannada', 'Telugu', 'Other']
-const PAGE_SIZE = 50
+const PAGE_SIZE = 25
 
 export function InventoryPage() {
   const { snapshot, service } = useAppData()
@@ -57,7 +57,7 @@ export function InventoryPage() {
 
   useEffect(() => {
     void loadFirstPage()
-  }, [loadFirstPage, snapshot?.inventorySummary])
+  }, [loadFirstPage])
 
   const loadMore = useCallback(async () => {
     if (!hasMore || !cursor || loading || loadingMore) return
@@ -126,7 +126,7 @@ export function InventoryPage() {
         <div className="inventory-result-meta"><span>{items.length}{hasMore ? '+' : ''} matching assets loaded</span><small>Fast server search · 50 at a time</small></div>
         {loading ? <div className="track-grid inventory-skeletons">{Array.from({ length: 8 }, (_, index) => <div className="track-card skeleton" key={index} />)}</div>
           : loadError && !items.length ? <EmptyState icon={<Music2 size={25} />} title="Inventory could not load" description={loadError} action={<Button onClick={() => void loadFirstPage()}>Try again</Button>} />
-            : items.length ? <><div className="track-grid">{items.map((track, index) => <button key={track.id} className="track-card" onClick={() => setSelected(track)}><div className="track-cover"><div className="waveform">{Array.from({ length: 18 }, (_, item) => <i key={item} style={{ height: `${20 + ((item * 17 + index * 13) % 64)}%` }} />)}</div><span><Music2 size={24} /></span>{index < 3 && sort !== 'name' && <Badge tone="yellow">Top {index + 1}</Badge>}</div><div className="track-copy"><div><span>{track.language}</span><h3>{track.track_name}</h3><p>{track.malayalam_title || track.english_title}</p></div><div className="track-tags">{track.tags.slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div><div className="track-metrics"><span><ShoppingCart size={15} /><strong>{track.total_orders}</strong><small>Orders</small></span><span><CircleDollarSign size={15} /><strong>{formatCurrency(track.lifetime_revenue)}</strong><small>Revenue</small></span></div></div></button>)}</div><div ref={sentinel} className="inventory-load-more">{loadingMore ? <><span /><p>Loading more tracks…</p></> : hasMore ? <Button variant="secondary" onClick={() => void loadMore()}>Load more</Button> : <small>All matching tracks loaded</small>}</div></>
+            : items.length ? <><div className="track-grid">{items.map((track, index) => <button key={track.id} className="track-card" onClick={() => setSelected(track)}><div className="track-cover"><span><Music2 size={24} /></span>{index < 3 && sort !== 'name' && <Badge tone="yellow">Top {index + 1}</Badge>}</div><div className="track-copy"><div><span>{track.language}</span><h3>{track.track_name}</h3><p>{track.malayalam_title || track.english_title}</p></div><div className="track-tags">{track.tags.slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div><div className="track-metrics"><span><ShoppingCart size={15} /><strong>{track.total_orders}</strong><small>Orders</small></span><span><CircleDollarSign size={15} /><strong>{formatCurrency(track.lifetime_revenue)}</strong><small>Revenue</small></span></div></div></button>)}</div><div ref={sentinel} className="inventory-load-more">{loadingMore ? <><span /><p>Loading more tracks…</p></> : hasMore ? <Button variant="secondary" onClick={() => void loadMore()}>Load more</Button> : <small>All matching tracks loaded</small>}</div></>
               : <EmptyState icon={<Music2 size={25} />} title="No matching karaoke found" description="Try another spelling or add this track as a new inventory asset." action={<Button icon={<Plus size={16} />} onClick={() => setAddOpen(true)}>Add track</Button>} />}
       </Card>
       <AddTrackModal open={addOpen} onClose={() => setAddOpen(false)} />
