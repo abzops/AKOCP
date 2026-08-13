@@ -40,6 +40,7 @@ function snapshot(): AppSnapshot {
     notifications: [],
     auditLogs: [],
     walletTransactions: [],
+    monthlyTarget: null,
     syncedAt: '2026-07-26T11:59:00Z'
   }
 }

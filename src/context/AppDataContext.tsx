@@ -143,7 +143,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       profiles: ['profiles', 'orders'],
       expenses: ['finance'],
       wallet_transactions: ['finance'],
-      recorded_sales: ['recordedSales', 'finance']
+      recorded_sales: ['recordedSales', 'finance'],
+      monthly_revenue_targets: ['targets']
     }
     const scheduleRefresh = (table: string) => {
       tableDomains[table].forEach((domain) => pendingDomains.current.add(domain))
@@ -183,7 +184,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const inferred = domains ?? (
         actionName.includes('track') ? ['inventory'] :
         actionName.includes('customer') ? ['customers', 'orders'] :
-        actionName.includes('withdrawal') || actionName.includes('expense') ? ['finance', 'notifications'] :
+        actionName.includes('target') ? ['targets'] :
+        actionName.includes('withdrawal') || actionName.includes('expense') ? ['finance', 'notifications', 'profiles'] :
         actionName.includes('notification') ? ['notifications'] :
         ['orders', 'customers', 'payments', 'inventory', 'finance', 'notifications']
       ) as RefreshDomain[]

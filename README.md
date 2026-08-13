@@ -15,6 +15,9 @@ The interface follows the supplied brand system: premium black surfaces, `#F4C40
 - customer lifetime value and order history
 - immutable wallet ledger from confirmed payments, expenses, and approved withdrawals
 - Founder-controlled expenses, service pricing, withdrawal review, team roles, and audit view
+- approval-based expense submissions with per-user Operations access
+- shared monthly revenue targets with daily pace and month-end forecasting
+- Founder withdrawal analysis by person, purpose, and operating-expense category
 - targeted realtime refresh, mobile pull-to-refresh, and explicit PWA update handling
 - server-paged inventory search that loads 50 tracks at a time
 - Founder-only customer privacy purge with anonymous financial retention
@@ -37,10 +40,11 @@ Production configuration is in `.env.production`. The Supabase anon key is inten
 
 1. Open the SQL Editor for project `cqptdpkhaiomitwzjysp`.
 2. Run [supabase/schema.sql](supabase/schema.sql) as one script.
-3. Register the first account through the app. It becomes `founder`; later accounts default to `operations`.
-4. In Authentication settings, choose whether email confirmation is required.
+3. Apply every file in `supabase/migrations` in filename order.
+4. Register the first account through the app. It becomes `founder`; later accounts default to `operations`.
+5. In Authentication settings, choose whether email confirmation is required.
 
-For an existing AK OCP project, apply migrations in `supabase/migrations` in filename order and deploy both Edge Functions:
+For an existing AK OCP project, apply unapplied migrations and deploy both Edge Functions:
 
 ```powershell
 npx supabase db push
@@ -50,7 +54,7 @@ npx supabase functions deploy customer-privacy-purge
 
 Deploy the database migration and Edge Function before pushing the matching frontend release.
 
-The schema creates all tables, indexes, search support, RLS policies, storage buckets, functions, realtime publication entries, service seeds, audit triggers, wallet controls, and notifications. Run it before creating production data.
+The base schema plus ordered migrations create all tables, indexes, search support, RLS policies, storage buckets, functions, realtime publication entries, service seeds, audit triggers, wallet controls, and notifications. Run them before creating production data.
 
 ## Commands
 
@@ -77,10 +81,12 @@ The Vite base path and PWA scope are configured for `https://abzops.github.io/AK
 | Upload payment proof | ✓ | ✓ |
 | Complete/deliver orders | ✓ | ✓ |
 | Confirm payment | ✓ | — |
-| Add expenses | ✓ | — |
+| Submit expenses | ✓ | Only explicitly enabled users |
+| Approve/reject expenses | ✓ | — |
 | Request withdrawal | ✓ | ✓ |
 | Approve/reject withdrawal | ✓ | — |
 | Change controlled prices | ✓ | — |
 | Analytics, roles, audit | ✓ | — |
+| Update monthly target | ✓ | ✓ |
 
 Database policies and guarded functions enforce these boundaries independently of the interface.

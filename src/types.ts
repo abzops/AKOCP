@@ -8,6 +8,7 @@ export type OrderStatus =
   | 'cancelled'
 export type PaymentStatus = 'unpaid' | 'proof_uploaded' | 'confirmed' | 'refunded'
 export type WithdrawalStatus = 'pending' | 'approved' | 'rejected'
+export type ExpenseStatus = 'pending' | 'approved' | 'rejected'
 export type ExpenseCategory = 'meta_ads' | 'travel' | 'food' | 'internet' | 'equipment' | 'miscellaneous'
 export type WithdrawalReason = 'salary' | 'profit_share' | 'travel' | 'food' | 'miscellaneous'
 export type AiActionType =
@@ -33,6 +34,7 @@ export interface Profile {
   role: Role
   avatar_url?: string | null
   active: boolean
+  can_submit_expenses?: boolean
   created_at: string
 }
 
@@ -125,9 +127,32 @@ export interface Expense {
   receipt_path?: string | null
   expense_date: string
   added_by: string
+  status: ExpenseStatus
+  reviewed_by?: string | null
+  reviewed_at?: string | null
   created_at: string
   deleted_at?: string | null
   creator?: Pick<Profile, 'id' | 'full_name'> | null
+  reviewer?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
+export interface MonthlyRevenueTarget {
+  month_start: string
+  target_amount: number
+  updated_by: string
+  updated_at: string
+}
+
+export interface MonthlyTargetForecast {
+  target: number
+  earned: number
+  remaining: number
+  progressPercent: number
+  daysElapsed: number
+  daysRemaining: number
+  dailyRequired: number
+  projectedMonthEnd: number
+  status: 'not_set' | 'behind' | 'on_track' | 'achieved'
 }
 
 export interface Withdrawal {
@@ -273,6 +298,7 @@ export interface AppSnapshot {
   notifications: Notification[]
   auditLogs: AuditLog[]
   walletTransactions: WalletTransaction[]
+  monthlyTarget: MonthlyRevenueTarget | null
   syncedAt: string
 }
 
@@ -333,6 +359,7 @@ export type RefreshDomain =
   | 'finance'
   | 'notifications'
   | 'recordedSales'
+  | 'targets'
 
 export interface DashboardMetrics {
   revenueToday: number
@@ -400,6 +427,9 @@ export interface DataService {
   createExpense(input: { amount: number; category: ExpenseCategory; description: string; expenseDate: string; file: File | null }, actor: Profile): Promise<void>
   requestWithdrawal(input: { amount: number; reason: WithdrawalReason; notes?: string }, actor: Profile): Promise<void>
   reviewWithdrawal(id: string, decision: 'approved' | 'rejected', actor: Profile): Promise<void>
+  reviewExpense(id: string, decision: 'approved' | 'rejected', actor: Profile): Promise<void>
+  setExpensePermission(id: string, allowed: boolean, actor: Profile): Promise<void>
+  upsertMonthlyTarget(monthStart: string, amount: number, actor: Profile): Promise<void>
   updateService(id: string, input: Pick<Service, 'name' | 'price' | 'active'>, actor: Profile): Promise<void>
   markNotificationsRead(ids: string[], actor: Profile): Promise<void>
   updateProfileRole(id: string, role: Role, actor: Profile): Promise<void>

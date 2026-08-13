@@ -1,10 +1,11 @@
-import { Activity, Archive, ArrowRight, Banknote, CheckCircle2, CircleDollarSign, Clock3, FileClock, Megaphone, Music2, ShoppingBag, TrendingUp, UsersRound, WalletCards } from 'lucide-react'
+import { Activity, Archive, ArrowRight, Banknote, CheckCircle2, CircleDollarSign, Clock3, FileClock, Megaphone, Music2, Pencil, ShoppingBag, Target, TrendingUp, UsersRound, WalletCards } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Card, EmptyState, MoneyStat, PageHeader, StatCard, StatusBadge } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Input, Modal, MoneyStat, PageHeader, StatCard, StatusBadge } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
-import { getExpenseBreakdown, getMonthlyRevenue, getServiceRevenue } from '../lib/analytics'
+import { getExpenseBreakdown, getMonthlyRevenue, getMonthlyTargetForecast, getServiceRevenue } from '../lib/analytics'
 import { expenseCategoryLabels, formatCurrency, formatDate, fromNow, statusLabels, withdrawalReasonLabels } from '../lib/format'
 
 const chartColors = ['#f4c400', '#f59e0b', '#f97316', '#fb7185', '#a78bfa', '#38bdf8']
@@ -13,6 +14,7 @@ export function DashboardPage() {
   const { profile } = useAuth()
   const { snapshot, metrics } = useAppData()
   const navigate = useNavigate()
+  const [targetOpen, setTargetOpen] = useState(false)
   if (!snapshot || !metrics) return null
   const monthlyRevenue = getMonthlyRevenue(snapshot)
   const serviceRevenue = getServiceRevenue(snapshot)
@@ -21,6 +23,7 @@ export function DashboardPage() {
   const pendingWithdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'pending').slice(0, 4)
   const recentRecordedSales = (snapshot.recordedSales ?? []).filter((sale) => sale.verified).slice(0, 6)
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
+  const forecast = getMonthlyTargetForecast(snapshot)
 
   return (
     <div className="page-stack dashboard-page">
@@ -30,6 +33,9 @@ export function DashboardPage() {
         description="Here is what is moving across Abhinand Karaokes today."
         action={profile?.role === 'founder' ? <button className="text-action" onClick={() => navigate('/analytics')}>Full analytics <ArrowRight size={16} /></button> : undefined}
       />
+
+      <MonthlyTargetCard forecast={forecast} onEdit={() => setTargetOpen(true)} />
+      <MonthlyTargetModal open={targetOpen} onClose={() => setTargetOpen(false)} initialValue={forecast.target} />
 
       <div className="stats-grid primary-stats">
         <MoneyStat label="Wallet balance" value={metrics.walletBalance} icon={<WalletCards size={21} />} tone="accent" trend="Available after expenses & withdrawals" />
@@ -142,8 +148,21 @@ export function DashboardPage() {
 
       <Card className="recent-expenses-strip">
         <div className="card-heading"><div><span>Latest activity</span><h2>Recent expenses</h2></div></div>
-        <div className="expense-strip">{snapshot.expenses.slice(0, 4).map((expense) => <div key={expense.id}><span><ShoppingBag size={17} /></span><div><strong>{expense.description}</strong><small>{expenseCategoryLabels[expense.category]} · {formatDate(expense.expense_date)}</small></div><b>{formatCurrency(expense.amount)}</b></div>)}</div>
+        <div className="expense-strip">{snapshot.expenses.filter((expense) => expense.status === 'approved').slice(0, 4).map((expense) => <div key={expense.id}><span><ShoppingBag size={17} /></span><div><strong>{expense.description}</strong><small>{expenseCategoryLabels[expense.category]} · {formatDate(expense.expense_date)}</small></div><b>{formatCurrency(expense.amount)}</b></div>)}</div>
       </Card>
     </div>
   )
+}
+
+function MonthlyTargetCard({ forecast, onEdit }: { forecast: ReturnType<typeof getMonthlyTargetForecast>; onEdit(): void }) {
+  const statusLabel = forecast.status === 'not_set' ? 'Set target' : forecast.status === 'on_track' ? 'On track' : forecast.status === 'behind' ? 'Behind pace' : 'Achieved'
+  return <Card className="monthly-target-card"><div className="target-card-heading"><span className="target-icon"><Target size={22} /></span><div><span>Monthly revenue target</span><h2>{forecast.target ? formatCurrency(forecast.target) : 'No target set'}</h2></div><Badge tone={forecast.status === 'achieved' || forecast.status === 'on_track' ? 'green' : forecast.status === 'behind' ? 'red' : 'yellow'}>{statusLabel}</Badge><Button variant="secondary" icon={<Pencil size={15} />} onClick={onEdit}>{forecast.target ? 'Edit' : 'Set target'}</Button></div>{forecast.target > 0 && <><div className="target-progress"><i style={{ width: `${forecast.progressPercent}%` }} /></div><div className="target-metrics"><span><small>Earned</small><strong>{formatCurrency(forecast.earned)}</strong></span><span><small>Remaining</small><strong>{formatCurrency(forecast.remaining)}</strong></span><span><small>Needed daily</small><strong>{formatCurrency(forecast.dailyRequired)}</strong></span><span><small>Projected month-end</small><strong>{formatCurrency(forecast.projectedMonthEnd)}</strong></span><span><small>Days left</small><strong>{forecast.daysRemaining}</strong></span></div></>}</Card>
+}
+
+function MonthlyTargetModal({ open, onClose, initialValue }: { open: boolean; onClose(): void; initialValue: number }) {
+  const { profile } = useAuth(); const { service, execute, busyAction } = useAppData(); const [amount, setAmount] = useState(initialValue ? String(initialValue) : '')
+  useEffect(() => { if (open) setAmount(initialValue ? String(initialValue) : '') }, [initialValue, open])
+  if (!profile) return null
+  const submit = async (event: FormEvent) => { event.preventDefault(); const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()); await execute('monthly-target', 'Monthly target updated', () => service.upsertMonthlyTarget(`${parts}-01`, Number(amount), profile), ['targets']); onClose() }
+  return <Modal open={open} onClose={onClose} title="Set monthly revenue target" description="Confirmed revenue is measured using the Asia/Kolkata calendar month." footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button form="monthly-target-form" type="submit" loading={busyAction === 'monthly-target'}>Save target</Button></>}><form id="monthly-target-form" onSubmit={submit} className="form-stack"><Input label="Target amount" type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required hint="Both Founder and Operations users can update the shared monthly target." /></form></Modal>
 }

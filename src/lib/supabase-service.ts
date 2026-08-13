@@ -2,6 +2,7 @@ import type { AppSnapshot, CreateOrderInput, CreateTrackInput, CustomerPurgePrev
 import { normalizeSupabaseError, supabase } from './supabase'
 
 const INVENTORY_PAGE_SIZE = 50
+const currentMonthStart = () => `${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date())}-01`
 
 const emptyInventorySummary: InventorySummary = {
   totalAssets: 0,
@@ -45,7 +46,7 @@ function assertNoError(error: unknown) {
 
 export const supabaseDataService: DataService = {
   async loadSnapshot(userId: string) {
-    const [services, profiles, customers, inventorySummary, orders, recordedSales, payments, expenses, withdrawals, notifications, audits, transactions] = await Promise.all([
+    const [services, profiles, customers, inventorySummary, orders, recordedSales, payments, expenses, withdrawals, notifications, audits, transactions, monthlyTarget] = await Promise.all([
       supabase.from('services').select('*').order('sort_order'),
       supabase.from('profiles').select('*').eq('active', true).order('full_name'),
       supabase.from('customers').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false }),
@@ -53,13 +54,14 @@ export const supabaseDataService: DataService = {
       supabase.from('orders').select('*, customer:customers(id,name,phone), service:services(id,code,name,price), assignee:profiles!orders_assigned_to_fkey(id,full_name)').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('recorded_sales').select('*').order('record_date', { ascending: false }).order('source_ref', { ascending: false }),
       supabase.from('payments').select('*').order('created_at', { ascending: false }),
-      supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
+      supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name), reviewer:profiles!expenses_reviewed_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
       supabase.from('withdrawals').select('*, requester:profiles!withdrawals_requested_by_fkey(id,full_name), approver:profiles!withdrawals_approved_by_fkey(id,full_name)').order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').eq('recipient_id', userId).order('created_at', { ascending: false }).limit(50),
       supabase.from('audit_logs').select('*, actor:profiles!audit_logs_actor_id_fkey(id,full_name)').order('created_at', { ascending: false }).limit(100),
-      supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false })
+      supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }),
+      supabase.from('monthly_revenue_targets').select('*').eq('month_start', currentMonthStart()).maybeSingle()
     ])
-    const error = [services, profiles, customers, inventorySummary, orders, recordedSales, payments, expenses, withdrawals, notifications, audits, transactions].find((result) => result.error)?.error
+    const error = [services, profiles, customers, inventorySummary, orders, recordedSales, payments, expenses, withdrawals, notifications, audits, transactions, monthlyTarget].find((result) => result.error)?.error
     assertNoError(error)
     return {
       services: services.data ?? [],
@@ -74,6 +76,7 @@ export const supabaseDataService: DataService = {
       notifications: notifications.data ?? [],
       auditLogs: (audits.data ?? []) as unknown as AppSnapshot['auditLogs'],
       walletTransactions: transactions.data ?? [],
+      monthlyTarget: monthlyTarget.data ?? null,
       syncedAt: new Date().toISOString()
     } as AppSnapshot
   },
@@ -113,7 +116,7 @@ export const supabaseDataService: DataService = {
     })())
     if (requested.has('finance')) tasks.push((async () => {
       const [expenses, withdrawals, transactions] = await Promise.all([
-        supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
+        supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name), reviewer:profiles!expenses_reviewed_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
         supabase.from('withdrawals').select('*, requester:profiles!withdrawals_requested_by_fkey(id,full_name), approver:profiles!withdrawals_approved_by_fkey(id,full_name)').order('created_at', { ascending: false }),
         supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false })
       ])
@@ -121,6 +124,10 @@ export const supabaseDataService: DataService = {
       next.expenses = (expenses.data ?? []) as unknown as AppSnapshot['expenses']
       next.withdrawals = (withdrawals.data ?? []) as unknown as AppSnapshot['withdrawals']
       next.walletTransactions = transactions.data ?? []
+    })())
+    if (requested.has('targets')) tasks.push((async () => {
+      const result = await supabase.from('monthly_revenue_targets').select('*').eq('month_start', currentMonthStart()).maybeSingle()
+      assertNoError(result.error); next.monthlyTarget = result.data ?? null
     })())
     if (requested.has('notifications')) tasks.push((async () => {
       const result = await supabase.from('notifications').select('*').eq('recipient_id', userId).order('created_at', { ascending: false }).limit(50)
@@ -302,6 +309,21 @@ export const supabaseDataService: DataService = {
 
   async reviewWithdrawal(id, decision) {
     const { error } = await supabase.rpc('review_withdrawal', { p_withdrawal_id: id, p_decision: decision })
+    assertNoError(error)
+  },
+
+  async reviewExpense(id, decision) {
+    const { error } = await supabase.rpc('review_expense', { p_expense_id: id, p_decision: decision })
+    assertNoError(error)
+  },
+
+  async setExpensePermission(id, allowed) {
+    const { error } = await supabase.rpc('set_expense_permission', { p_profile_id: id, p_allowed: allowed })
+    assertNoError(error)
+  },
+
+  async upsertMonthlyTarget(monthStart, amount) {
+    const { error } = await supabase.rpc('upsert_monthly_revenue_target', { p_month_start: monthStart, p_target_amount: amount })
     assertNoError(error)
   },
 

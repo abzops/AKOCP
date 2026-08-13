@@ -1,5 +1,5 @@
 import { endOfMonth, endOfWeek, isAfter, isSameDay, startOfMonth, startOfWeek, subMonths } from 'date-fns'
-import type { AppSnapshot, DashboardMetrics } from '../types'
+import type { AppSnapshot, DashboardMetrics, MonthlyTargetForecast } from '../types'
 
 const confirmedRevenue = (snapshot: AppSnapshot) => snapshot.walletTransactions.filter((transaction) => transaction.type === 'payment')
 
@@ -20,7 +20,7 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
     return date >= monthStart && date <= monthEnd
   }).reduce((sum, transaction) => sum + transaction.amount, 0)
   const totalRevenue = revenueTransactions.reduce((sum, transaction) => sum + transaction.amount, 0)
-  const totalExpenses = snapshot.expenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const totalExpenses = snapshot.expenses.filter((expense) => expense.status === 'approved').reduce((sum, expense) => sum + expense.amount, 0)
   const approvedWithdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'approved').reduce((sum, withdrawal) => sum + withdrawal.amount, 0)
   const activeStatuses = new Set(['inquiry', 'payment_pending', 'in_progress'])
   const newCustomerBoundary = subMonths(now, 1)
@@ -50,7 +50,7 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
     pendingWithdrawals: snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'pending').length,
     totalInventory: snapshot.inventorySummary.totalAssets,
     totalCustomers: allContacts.size,
-    adSpend: snapshot.expenses.filter((expense) => expense.category === 'meta_ads').reduce((sum, expense) => sum + expense.amount, 0),
+    adSpend: snapshot.expenses.filter((expense) => expense.status === 'approved' && expense.category === 'meta_ads').reduce((sum, expense) => sum + expense.amount, 0),
     newCustomers: newContacts.size,
     recordedSaleCount: recordedSales.length,
     recordedSalesTotal: recordedSales.reduce((sum, sale) => sum + sale.quoted_amount, 0),
@@ -106,6 +106,52 @@ export function getLanguageOrders(snapshot: AppSnapshot) {
 
 export function getExpenseBreakdown(snapshot: AppSnapshot) {
   const counts = new Map<string, number>()
-  snapshot.expenses.forEach((expense) => counts.set(expense.category, (counts.get(expense.category) ?? 0) + expense.amount))
+  snapshot.expenses.filter((expense) => expense.status === 'approved').forEach((expense) => counts.set(expense.category, (counts.get(expense.category) ?? 0) + expense.amount))
   return [...counts.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+}
+
+export function getFinanceOutflowAnalysis(snapshot: AppSnapshot) {
+  const approvedWithdrawals = snapshot.withdrawals.filter((item) => item.status === 'approved')
+  const byPerson = new Map<string, { id: string; name: string; total: number; count: number }>()
+  const byPurpose = new Map<string, { purpose: string; total: number; count: number }>()
+  approvedWithdrawals.forEach((item) => {
+    const id = item.requested_by
+    const person = byPerson.get(id) ?? { id, name: item.requester?.full_name ?? 'Unknown user', total: 0, count: 0 }
+    person.total += item.amount; person.count += 1; byPerson.set(id, person)
+    const purpose = byPurpose.get(item.reason) ?? { purpose: item.reason, total: 0, count: 0 }
+    purpose.total += item.amount; purpose.count += 1; byPurpose.set(item.reason, purpose)
+  })
+  const approvedExpenses = snapshot.expenses.filter((item) => item.status === 'approved')
+  return {
+    withdrawalTotal: approvedWithdrawals.reduce((sum, item) => sum + item.amount, 0),
+    expenseTotal: approvedExpenses.reduce((sum, item) => sum + item.amount, 0),
+    pendingWithdrawalTotal: snapshot.withdrawals.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0),
+    pendingExpenseTotal: snapshot.expenses.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0),
+    byPerson: [...byPerson.values()].sort((a, b) => b.total - a.total),
+    byPurpose: [...byPurpose.values()].sort((a, b) => b.total - a.total),
+    expenses: getExpenseBreakdown(snapshot)
+  }
+}
+
+export function getMonthlyTargetForecast(snapshot: AppSnapshot, now = new Date()): MonthlyTargetForecast {
+  const target = Number(snapshot.monthlyTarget?.target_amount ?? 0)
+  const kolkata = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  const monthKey = kolkata.slice(0, 7)
+  const earned = confirmedRevenue(snapshot).filter((transaction) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date(transaction.created_at)) === monthKey).reduce((sum, transaction) => sum + transaction.amount, 0)
+  const [, month, day] = kolkata.split('-').map(Number)
+  const year = Number(kolkata.slice(0, 4))
+  const totalDays = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const daysElapsed = day
+  const daysRemaining = totalDays - day + 1
+  const remaining = Math.max(target - earned, 0)
+  const projectedMonthEnd = daysElapsed ? earned / daysElapsed * totalDays : 0
+  const paceRequired = target ? target / totalDays * daysElapsed : 0
+  return {
+    target, earned, remaining,
+    progressPercent: target ? Math.min(earned / target * 100, 100) : 0,
+    daysElapsed, daysRemaining,
+    dailyRequired: target ? Math.ceil(remaining / daysRemaining) : 0,
+    projectedMonthEnd,
+    status: !target ? 'not_set' : earned >= target ? 'achieved' : earned >= paceRequired ? 'on_track' : 'behind'
+  }
 }
