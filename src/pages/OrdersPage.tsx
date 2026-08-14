@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, ClipboardCheck, Download, FileImage, Filter, MessageCircle, Music2, PackageCheck, Plus, Search, Send, UserRound, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, ClipboardCheck, Download, FileImage, Filter, MessageCircle, Music2, PackageCheck, Plus, Search, Send, Trash2, UserRound, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Input, Modal, PageHeader, Select, StatusBadge, Textarea, cn } from '../components/ui'
@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
 import { aiService } from '../lib/ai-service'
 import { downloadCsv, formatCurrency, formatDate, fromNow, normalizeSearch, paymentStatusLabels, statusLabels } from '../lib/format'
-import type { CreateOrderInput, InventoryTrack, Order, OrderStatus } from '../types'
+import type { CreateOrderInput, InventoryTrack, Order, OrderDeletionPreview, OrderStatus } from '../types'
 
 const languages = ['Malayalam', 'Tamil', 'Hindi', 'English', 'Kannada', 'Telugu', 'Other']
 const statuses: Array<'all' | OrderStatus> = ['all', 'inquiry', 'payment_pending', 'in_progress', 'completed', 'delivered', 'cancelled']
@@ -17,7 +17,7 @@ const emptyOrderForm: CreateOrderInput = {
 
 export function OrdersPage() {
   const { profile } = useAuth()
-  const { snapshot, service, execute, busyAction } = useAppData()
+  const { snapshot, service, execute, busyAction, showToast } = useAppData()
   const [params, setParams] = useSearchParams()
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | OrderStatus>('all')
@@ -27,6 +27,11 @@ export function OrdersPage() {
   const [paymentHandoff, setPaymentHandoff] = useState<{ proposalId: string; amount: number; upiReference: string } | null>(null)
   const [completeOrder, setCompleteOrder] = useState<Order | null>(null)
   const [cancelOrder, setCancelOrder] = useState<Order | null>(null)
+  const [deletingOrder, setDeletingOrder] = useState<Order | null>(null)
+  const [deletionPreview, setDeletionPreview] = useState<OrderDeletionPreview | null>(null)
+  const [deletionConfirmation, setDeletionConfirmation] = useState('')
+  const [deletionLoading, setDeletionLoading] = useState(false)
+  const [deletionError, setDeletionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (params.get('new') === '1') {
@@ -51,6 +56,26 @@ export function OrdersPage() {
       setParams({}, { replace: true })
     }
   }, [params, setParams, snapshot])
+
+  useEffect(() => {
+    if (!deletingOrder) {
+      setDeletionPreview(null)
+      setDeletionConfirmation('')
+      setDeletionError(null)
+      return
+    }
+    let active = true
+    setDeletionLoading(true)
+    setDeletionError(null)
+    service.previewOrderDeletion(deletingOrder.id).then((preview) => {
+      if (active) setDeletionPreview(preview)
+    }).catch((error) => {
+      if (active) setDeletionError(error instanceof Error ? error.message : 'Could not prepare order deletion.')
+    }).finally(() => {
+      if (active) setDeletionLoading(false)
+    })
+    return () => { active = false }
+  }, [deletingOrder, service])
 
   if (!snapshot || !profile) return null
   const filtered = snapshot.orders.filter((order) => {
@@ -77,6 +102,22 @@ export function OrdersPage() {
     await execute(`cancel-${cancelOrder.id}`, 'Order cancelled', () => service.updateOrderStatus(cancelOrder.id, 'cancelled', profile))
     setCancelOrder(null)
     setSelected(null)
+  }
+  const permanentlyDelete = async () => {
+    if (!deletingOrder || deletionConfirmation !== deletingOrder.order_number) return
+    const order = deletingOrder
+    setDeletionError(null)
+    const result = await execute(
+      `delete-order-${order.id}`,
+      `${order.order_number} permanently deleted`,
+      () => service.deleteOrder(order.id, deletionConfirmation),
+      ['orders', 'payments', 'customers', 'finance', 'inventory', 'notifications']
+    )
+    if (!result) return
+    if (result.proofCleanupStatus !== 'completed') {
+      showToast({ type: 'info', title: 'Order deleted; proof cleanup will retry', message: 'The business records are gone, but a storage cleanup job still needs attention.' })
+    }
+    setDeletingOrder(null)
   }
   const exportOrders = () => downloadCsv(`AKOCP-orders-${new Date().toISOString().slice(0, 10)}.csv`, filtered.map((order) => ({
     'Order ID': order.order_number,
@@ -123,12 +164,19 @@ export function OrdersPage() {
         onDeliver={() => selected && void changeStatus(selected, 'delivered')}
         onProgress={() => selected && void changeStatus(selected, 'in_progress')}
         onCancel={() => { setCancelOrder(selected); setSelected(null) }}
+        onDelete={() => { setDeletingOrder(selected); setSelected(null) }}
         canConfirm={profile.role === 'founder'}
+        canDelete={profile.role === 'founder'}
         loading={Boolean(selected && busyAction?.includes(selected.id))}
       />
       <PaymentModal order={paymentOrder} handoff={paymentHandoff} onClose={() => { setPaymentOrder(null); setPaymentHandoff(null); sessionStorage.removeItem('akocp-ai-payment') }} />
       <CompleteOrderModal order={completeOrder} onClose={() => setCompleteOrder(null)} />
       <ConfirmDialog open={Boolean(cancelOrder)} onClose={() => setCancelOrder(null)} onConfirm={() => void cancel()} title="Cancel this order?" message={`${cancelOrder?.order_number ?? 'This order'} will remain in the audit trail, but no longer count as active.`} confirmLabel="Cancel order" danger loading={Boolean(cancelOrder && busyAction === `cancel-${cancelOrder.id}`)} />
+      <Modal open={Boolean(deletingOrder)} onClose={() => !deletionLoading && setDeletingOrder(null)} title="Permanently delete order?" description="Founder-only irreversible deletion" size="md" footer={<><Button variant="ghost" disabled={deletionLoading} onClick={() => setDeletingOrder(null)}>Cancel</Button><Button variant="danger" icon={<Trash2 size={16} />} loading={busyAction === `delete-order-${deletingOrder?.id}`} disabled={!deletionPreview || deletionConfirmation !== deletingOrder?.order_number} onClick={() => void permanentlyDelete()}>Permanently delete</Button></>}>
+        <div className="privacy-purge-warning"><span><AlertTriangle size={22} /></span><div><strong>This cannot be undone</strong><p>The order, every linked payment, confirmed wallet revenue, proof files, notifications, proposals, and detailed audit entries will be removed. The customer and reusable inventory track remain, with totals recalculated.</p></div></div>
+        {deletionLoading && !deletionPreview ? <div className="purge-loading"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div> : deletionPreview && <><div className="purge-counts">{Object.entries(deletionPreview.affected).map(([label, count]) => <div key={label}><span>{label.replace(/([A-Z])/g, ' $1')}</span><strong>{count}</strong></div>)}</div><div className="form-notice"><CircleDollarSign size={16} /> {formatCurrency(deletionPreview.removedFinancialAmount)} confirmed revenue will be removed from the wallet and reports.</div><Input label={`Type “${deletingOrder?.order_number}” to confirm`} value={deletionConfirmation} onChange={(event) => setDeletionConfirmation(event.target.value)} autoComplete="off" /></>}
+        {deletionError && <div className="form-alert error">{deletionError}</div>}
+      </Modal>
     </div>
   )
 }
@@ -204,7 +252,7 @@ function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): void })
   )
 }
 
-function OrderDetailsModal({ order, onClose, onUpload, onConfirm, onComplete, onDeliver, onProgress, onCancel, canConfirm, loading }: { order: Order | null; onClose(): void; onUpload(): void; onConfirm(): void; onComplete(): void; onDeliver(): void; onProgress(): void; onCancel(): void; canConfirm: boolean; loading: boolean }) {
+function OrderDetailsModal({ order, onClose, onUpload, onConfirm, onComplete, onDeliver, onProgress, onCancel, onDelete, canConfirm, canDelete, loading }: { order: Order | null; onClose(): void; onUpload(): void; onConfirm(): void; onComplete(): void; onDeliver(): void; onProgress(): void; onCancel(): void; onDelete(): void; canConfirm: boolean; canDelete: boolean; loading: boolean }) {
   if (!order) return null
   return (
     <Modal open={Boolean(order)} onClose={onClose} title={order.order_number} description={`${order.track_name} · ${order.language}`} size="lg">
@@ -218,6 +266,7 @@ function OrderDetailsModal({ order, onClose, onUpload, onConfirm, onComplete, on
         {order.payment_status === 'confirmed' && order.status === 'in_progress' && <Button icon={<CheckCircle2 size={16} />} onClick={onComplete}>Mark complete</Button>}
         {order.status === 'completed' && <Button icon={<PackageCheck size={16} />} onClick={onDeliver}>Mark delivered</Button>}
         {!['completed', 'delivered', 'cancelled'].includes(order.status) && <Button variant="danger" icon={<XCircle size={16} />} onClick={onCancel}>Cancel order</Button>}
+        {canDelete && <Button variant="danger" icon={<Trash2 size={16} />} onClick={onDelete}>Delete order</Button>}
       </div>
     </Modal>
   )

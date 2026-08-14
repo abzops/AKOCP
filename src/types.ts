@@ -349,6 +349,30 @@ export interface CustomerPurgeResult {
   proofCleanupStatus: 'pending' | 'completed' | 'failed'
 }
 
+export interface OrderDeletionAffected {
+  orders: number
+  payments: number
+  confirmedPayments: number
+  proofs: number
+  walletTransactions: number
+  notifications: number
+  aiProposals: number
+  auditLogs: number
+}
+
+export interface OrderDeletionPreview {
+  orderNumber: string
+  affected: OrderDeletionAffected
+  removedFinancialAmount: number
+}
+
+export interface OrderDeletionResult {
+  deletionId: string
+  affected: OrderDeletionAffected
+  removedFinancialAmount: number
+  proofCleanupStatus: 'pending' | 'completed' | 'failed'
+}
+
 export type RefreshDomain =
   | 'services'
   | 'profiles'
@@ -417,6 +441,8 @@ export interface DataService {
   getInventoryTrackOrders(trackId: string): Promise<Order[]>
   previewCustomerPurge(customerId: string): Promise<CustomerPurgePreview>
   purgeCustomer(customerId: string, confirmationName: string): Promise<CustomerPurgeResult>
+  previewOrderDeletion(orderId: string): Promise<OrderDeletionPreview>
+  deleteOrder(orderId: string, confirmationOrderNumber: string): Promise<OrderDeletionResult>
   createOrder(input: CreateOrderInput, actor: Profile): Promise<void>
   updateOrderStatus(orderId: string, status: OrderStatus, actor: Profile): Promise<void>
   uploadPayment(orderId: string, amount: number, upiReference: string, file: File | null, actor: Profile): Promise<void>

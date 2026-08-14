@@ -1,4 +1,4 @@
-import type { AppSnapshot, CreateOrderInput, CreateTrackInput, CustomerPurgePreview, CustomerPurgeResult, DataService, ExpenseCategory, InventoryPageResult, InventoryQuery, InventorySummary, InventoryTrack, Order, OrderStatus, Profile, RefreshDomain, Role, Service, WithdrawalReason } from '../types'
+import type { AppSnapshot, CreateOrderInput, CreateTrackInput, CustomerPurgePreview, CustomerPurgeResult, DataService, ExpenseCategory, InventoryPageResult, InventoryQuery, InventorySummary, InventoryTrack, Order, OrderDeletionPreview, OrderDeletionResult, OrderStatus, Profile, RefreshDomain, Role, Service, WithdrawalReason } from '../types'
 import { normalizeSupabaseError, supabase } from './supabase'
 
 const INVENTORY_PAGE_SIZE = 50
@@ -44,8 +44,37 @@ function assertNoError(error: unknown) {
   if (error) throw normalizeSupabaseError(error)
 }
 
+type OrderDeletionRpcResult = OrderDeletionResult & { proofPaths?: string[] }
+
+async function cleanOrderProofs(deletionId: string, proofPaths: string[]) {
+  if (!proofPaths.length) return true
+  const { error } = await supabase.storage.from('payment-proofs').remove(proofPaths)
+  const message = error ? normalizeSupabaseError(error).message : null
+  const cleanup = await supabase.rpc('record_order_deletion_cleanup', {
+    p_deletion_id: deletionId,
+    p_success: !error,
+    p_error: message
+  })
+  assertNoError(cleanup.error)
+  return !error
+}
+
+async function retryPendingOrderProofs() {
+  const { data, error } = await supabase
+    .from('order_deletion_jobs')
+    .select('deletion_id, proof_paths')
+    .in('status', ['pending', 'failed'])
+    .lt('attempts', 9)
+    .limit(3)
+  if (error) return
+  for (const job of (data ?? []) as Array<{ deletion_id: string; proof_paths: string[] }>) {
+    await cleanOrderProofs(job.deletion_id, job.proof_paths ?? []).catch(() => undefined)
+  }
+}
+
 export const supabaseDataService: DataService = {
   async loadSnapshot(userId: string) {
+    void retryPendingOrderProofs()
     const [services, profiles, customers, inventorySummary, orders, recordedSales, payments, expenses, withdrawals, notifications, audits, transactions, monthlyTarget] = await Promise.all([
       supabase.from('services').select('*').order('sort_order'),
       supabase.from('profiles').select('*').eq('active', true).order('full_name'),
@@ -206,6 +235,26 @@ export const supabaseDataService: DataService = {
     assertNoError(error)
     if (!data) throw new Error('Customer purge result was empty')
     return data
+  },
+
+  async previewOrderDeletion(orderId: string) {
+    const { data, error } = await supabase.rpc('preview_order_deletion', { p_order_id: orderId })
+    assertNoError(error)
+    if (!data) throw new Error('Order deletion preview was empty')
+    return data as OrderDeletionPreview
+  },
+
+  async deleteOrder(orderId: string, confirmationOrderNumber: string) {
+    const { data, error } = await supabase.rpc('confirm_order_deletion', {
+      p_order_id: orderId,
+      p_confirmation_order_number: confirmationOrderNumber
+    })
+    assertNoError(error)
+    if (!data) throw new Error('Order deletion result was empty')
+    const result = data as OrderDeletionRpcResult
+    const proofCleanupStatus = await cleanOrderProofs(result.deletionId, result.proofPaths ?? []) ? 'completed' : 'failed'
+    const { proofPaths: _proofPaths, ...safeResult } = result
+    return { ...safeResult, proofCleanupStatus }
   },
 
   async createOrder(input: CreateOrderInput, actor: Profile) {
