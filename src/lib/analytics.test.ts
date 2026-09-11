@@ -85,6 +85,32 @@ describe('business analytics', () => {
     expect(metrics.netProfit).toBe(metrics.totalRevenue - 200)
   })
 
+  it('computes correct wallet balance and net profit when user has partial expenses and withdrawals due to RLS', () => {
+    const snapshot = createSnapshot()
+    // Simulate real production ledger:
+    // Revenue: 34,050
+    // Expenses in ledger: -3,450
+    // Withdrawals in ledger: -30,600
+    // Non-founder only sees 1,500 of expenses and 28,800 of withdrawals in table rows
+    snapshot.walletTransactions = [
+      { id: 'tx-1', type: 'payment', amount: 34_050, reference_type: 'payment', reference_id: 'p-1', description: 'Revenue', created_at: now },
+      { id: 'tx-2', type: 'expense', amount: -3_450, reference_type: 'expense', reference_id: 'e-1', description: 'All expenses', created_at: now },
+      { id: 'tx-3', type: 'withdrawal', amount: -30_600, reference_type: 'withdrawal', reference_id: 'w-1', description: 'All withdrawals', created_at: now },
+    ]
+    snapshot.expenses = [
+      { id: 'expense-roshan', amount: 1_500, category: 'internet', description: 'Roshan spend', expense_date: '2026-07-15', added_by: 'operations-1', status: 'approved', created_at: now }
+    ]
+    snapshot.withdrawals = [
+      { id: 'w-roshan', requested_by: 'operations-1', amount: 28_800, reason: 'salary', status: 'approved', created_at: now }
+    ]
+
+    const metrics = getDashboardMetrics(snapshot)
+    expect(metrics.totalRevenue).toBe(34_050)
+    expect(metrics.totalExpenses).toBe(3_450)
+    expect(metrics.netProfit).toBe(30_600)
+    expect(metrics.walletBalance).toBe(0)
+  })
+
   it('groups paid orders by controlled service', () => {
     const snapshot = createSnapshot()
     const groups = getServiceRevenue(snapshot)

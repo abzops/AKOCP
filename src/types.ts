@@ -195,7 +195,7 @@ export interface AuditLog {
 
 export interface WalletTransaction {
   id: string
-  type: 'payment' | 'expense' | 'withdrawal' | 'adjustment'
+  type: 'payment' | 'expense' | 'withdrawal' | 'adjustment' | 'purged_payment' | 'purged_recorded_sale'
   amount: number
   reference_type: string
   reference_id: string

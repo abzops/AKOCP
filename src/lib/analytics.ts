@@ -1,7 +1,12 @@
 import { endOfMonth, endOfWeek, isAfter, isSameDay, startOfMonth, startOfWeek, subMonths } from 'date-fns'
 import type { AppSnapshot, DashboardMetrics, MonthlyTargetForecast } from '../types'
 
-const confirmedRevenue = (snapshot: AppSnapshot) => snapshot.walletTransactions.filter((transaction) => transaction.type === 'payment')
+const confirmedRevenue = (snapshot: AppSnapshot) =>
+  snapshot.walletTransactions.filter((transaction) =>
+    transaction.type === 'payment' ||
+    transaction.type === 'purged_payment' ||
+    transaction.type === 'purged_recorded_sale'
+  )
 
 export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
   const now = new Date()
@@ -20,8 +25,14 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
     return date >= monthStart && date <= monthEnd
   }).reduce((sum, transaction) => sum + transaction.amount, 0)
   const totalRevenue = revenueTransactions.reduce((sum, transaction) => sum + transaction.amount, 0)
-  const totalExpenses = snapshot.expenses.filter((expense) => expense.status === 'approved').reduce((sum, expense) => sum + expense.amount, 0)
-  const approvedWithdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'approved').reduce((sum, withdrawal) => sum + withdrawal.amount, 0)
+  const tableExpenses = snapshot.expenses.filter((expense) => expense.status === 'approved').reduce((sum, expense) => sum + expense.amount, 0)
+  const tableWithdrawals = snapshot.withdrawals.filter((withdrawal) => withdrawal.status === 'approved').reduce((sum, withdrawal) => sum + withdrawal.amount, 0)
+  const ledgerExpenses = snapshot.walletTransactions.filter((tx) => tx.type === 'expense').reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+  const ledgerWithdrawals = snapshot.walletTransactions.filter((tx) => tx.type === 'withdrawal').reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+  const ledgerAdjustments = snapshot.walletTransactions.filter((tx) => tx.type === 'adjustment').reduce((sum, tx) => sum + tx.amount, 0)
+
+  const totalExpenses = Math.max(tableExpenses, ledgerExpenses)
+  const approvedWithdrawals = Math.max(tableWithdrawals, ledgerWithdrawals)
   const activeStatuses = new Set(['inquiry', 'payment_pending', 'in_progress'])
   const newCustomerBoundary = subMonths(now, 1)
   const recordedSales = (snapshot.recordedSales ?? []).filter((order) => order.verified)
@@ -40,7 +51,7 @@ export function getDashboardMetrics(snapshot: AppSnapshot): DashboardMetrics {
     revenueWeek,
     revenueMonth,
     totalRevenue,
-    walletBalance: totalRevenue - totalExpenses - approvedWithdrawals,
+    walletBalance: totalRevenue - totalExpenses - approvedWithdrawals + ledgerAdjustments,
     totalExpenses,
     netProfit: totalRevenue - totalExpenses,
     activeOrders: snapshot.orders.filter((order) => activeStatuses.has(order.status)).length,
@@ -122,9 +133,11 @@ export function getFinanceOutflowAnalysis(snapshot: AppSnapshot) {
     purpose.total += item.amount; purpose.count += 1; byPurpose.set(item.reason, purpose)
   })
   const approvedExpenses = snapshot.expenses.filter((item) => item.status === 'approved')
+  const ledgerExpenses = snapshot.walletTransactions.filter((tx) => tx.type === 'expense').reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+  const ledgerWithdrawals = snapshot.walletTransactions.filter((tx) => tx.type === 'withdrawal').reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
   return {
-    withdrawalTotal: approvedWithdrawals.reduce((sum, item) => sum + item.amount, 0),
-    expenseTotal: approvedExpenses.reduce((sum, item) => sum + item.amount, 0),
+    withdrawalTotal: Math.max(approvedWithdrawals.reduce((sum, item) => sum + item.amount, 0), ledgerWithdrawals),
+    expenseTotal: Math.max(approvedExpenses.reduce((sum, item) => sum + item.amount, 0), ledgerExpenses),
     pendingWithdrawalTotal: snapshot.withdrawals.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0),
     pendingExpenseTotal: snapshot.expenses.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0),
     byPerson: [...byPerson.values()].sort((a, b) => b.total - a.total),
