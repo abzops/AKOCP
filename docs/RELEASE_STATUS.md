@@ -26,3 +26,11 @@ A complete private pre-release snapshot and the previous agent source are saved 
 The frontend release passed GitHub checks and published successfully. The live PWA update was activated and the Nemotron Lightning controls and Available provider health were verified. Production Orders, Finance, Inventory, Customers, and Analytics pages load with live data. A fresh copilot conversation remains empty until a new prompt is submitted. Synthetic provider checks validate real structured tool calling; authenticated summary requests read live data.
 
 The owner-authorized historical import and payment confirmations were verified separately using private before/after exports. No historical schema/data import should be rerun. Use `supabase/checks/data-snapshot.sql` for private verification exports and `docs/OPERATIONS_RUNBOOK.md` for recovery details. Privacy purge and irreversible deletion were not exercised on real customer data during release checks. Database regression tests use an isolated engine rather than simultaneous production sessions.
+
+## Inventory search follow-up - deployment pending
+
+An owner screenshot exposed a false negative for a romanized song query. The saved inventory has the matching title only in Malayalam script, with no English title. The copilot previously used a separate title-only substring query and ignored searchable aliases in tags.
+
+The prepared fix uses the app's `search_inventory` RPC, distinguishes a text-search miss from confirmed absence, and requires alternate-script/spelling retries. Migration `20261023120000_inventory_title_aliases.sql` adds English and alternate-spelling aliases to the verified record without replacing its original title or commercial history. The exact alias queries pass isolated database tests. Current checks: 16 database and 10 Edge Function tests, plus lint.
+
+This follow-up has not been applied live: browser connection attempts timed out, and the CLI account cannot access this project. Restore browser access, apply only the alias migration, deploy the updated `ai-copilot` function, then verify the owner's original query in a new conversation. Earlier live release checks do not establish that multilingual inventory search was complete.

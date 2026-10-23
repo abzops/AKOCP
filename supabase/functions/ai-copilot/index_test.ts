@@ -1,6 +1,7 @@
 import {
   availableTools,
   callProvider,
+  executeReadTool,
   boundedResult,
   parseToolArguments,
   providerOptions,
@@ -104,4 +105,23 @@ Deno.test("Nemotron keeps structured tool calls while the app uses SSE", async (
     assertEquals(result.message.tool_calls, [toolCall]);
     assertEquals(chunks, []);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+Deno.test("copilot inventory search uses the shared alias-aware RPC and excludes storage paths", async () => {
+  const client = { rpc: (name: string, args: Record<string,unknown>) => {
+    assertEquals(name,"search_inventory");
+    assertEquals(args.p_query,"manmatha rasa");
+    return Promise.resolve({data:[{id:"track-id",track_name:"മൻമത റാസ",english_title:"Manmatha Rasa",tags:["manmatha rasa"],file_path:"private-file-path"}],error:null});
+  } };
+  const result=await executeReadTool(client as never,"search_records",{entity:"inventory",query:"manmatha rasa"});
+  assertEquals(result.matchStatus,"matches_found");
+  assertEquals((result.rows as Record<string,unknown>[])[0].english_title,"Manmatha Rasa");
+  assertEquals(JSON.stringify(result).includes("private-file-path"),false);
+});
+
+Deno.test("an unmatched inventory query is reported as no_text_match, not definitive absence", async () => {
+  const client={rpc:()=>Promise.resolve({data:[],error:null})};
+  const result=await executeReadTool(client as never,"search_records",{entity:"inventory",query:"another spelling"});
+  assertEquals(result.matchStatus,"no_text_match");
+  assertEquals(result.rows,[]);
 });

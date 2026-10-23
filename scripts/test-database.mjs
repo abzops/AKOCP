@@ -59,7 +59,8 @@ try {
   await apply(`supabase/migrations/${hardening}`)
   const reapplied = await snapshot()
   check('migration can be reapplied without data changes', () => assert.deepEqual(reapplied, before))
-  for (const name of migrations.filter((name) => name > hardening)) await apply(`supabase/migrations/${name}`)
+  const titleAliases = migrations.find((name) => name.endsWith('_inventory_title_aliases.sql'))
+  for (const name of migrations.filter((name) => name > hardening && name !== titleAliases)) await apply(`supabase/migrations/${name}`)
   const configured = await snapshot()
   const { ai_settings: oldSettings, ...oldBusiness } = reapplied
   const { ai_settings: newSettings, ...newBusiness } = configured
@@ -124,6 +125,19 @@ try {
     assert.equal(Number(summary.deliveredPaidOrdersInPeriod),0)
   })
   check('AI summary distinguishes current balance, period movement, and delivered paid counts', () => {})
+  await db.query("insert into inventory_tracks(id,track_name,malayalam_title,language,tags) values('07ea6c07-c0b3-44e1-834d-7e70b335b2f7','മൻമത റാസ','മൻമത റാസ','Malayalam',array['original-tag'])")
+  assert(titleAliases)
+  await apply(`supabase/migrations/${titleAliases}`)
+  await apply(`supabase/migrations/${titleAliases}`)
+  await asUser(founder, async () => {
+    for (const query of ['manmatha rasa','manmadha rasa','മൻമത റാസ']) {
+      const matches = (await db.query('select * from search_inventory($1)',[query])).rows
+      assert.equal(matches.length,1)
+      assert.equal(matches[0].track_name,'മൻമത റാസ')
+      assert.ok(matches[0].tags.includes('original-tag'))
+    }
+  })
+  check('Malayalam-only title is found through English and spelling aliases without replacing original metadata', () => {})
   const balance = Number(await scalar('select sum(amount) from wallet_transactions'))
   let expenseId, withdrawalId
   await asUser(founder, async () => {
