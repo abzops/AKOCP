@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:db": "node scripts/test-database.mjs",
+    "test:edge": "deno test --allow-env --allow-net supabase/functions/ai-copilot/index_test.ts",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0"
   },
@@ -25,6 +27,7 @@
     "recharts": "3.9.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
     "@eslint/js": "9.39.2",
     "@tailwindcss/vite": "4.3.2",
     "@testing-library/jest-dom": "6.9.1",

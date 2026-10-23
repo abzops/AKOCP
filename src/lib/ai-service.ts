@@ -132,12 +132,12 @@ export const aiService = {
 
     if (!response.ok) {
       const errorText = await response.text()
+      let message = `Edge Function failed: ${response.status} ${response.statusText}`
       try {
         const errorJson = JSON.parse(errorText)
-        throw new Error(errorJson.error || "Edge Function failed")
-      } catch {
-        throw new Error(`Edge Function failed: ${response.status} ${response.statusText}`)
-      }
+        if (typeof errorJson.error === 'string') message = errorJson.error
+      } catch { /* Keep the HTTP error if the server did not return JSON. */ }
+      throw new Error(message)
     }
 
     if (!response.body) throw new Error("No response body")

@@ -804,7 +804,7 @@ revoke insert, update, delete on public.wallet_transactions, public.audit_logs f
 create table if not exists public.ai_settings (
   id smallint primary key default 1 check (id = 1),
   enabled boolean not null default false,
-  primary_model text not null default 'meta/llama-3.3-70b-instruct'
+  primary_model text not null default 'openai/gpt-oss-20b'
     check (primary_model in ('meta/llama-3.3-70b-instruct', 'openai/gpt-oss-20b')),
   fallback_model text not null default 'openai/gpt-oss-20b'
     check (fallback_model in ('meta/llama-3.3-70b-instruct', 'openai/gpt-oss-20b')),

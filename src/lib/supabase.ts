@@ -5,6 +5,11 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? ''
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
+// Capture this before Supabase consumes and removes the recovery URL fragment.
+if (new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery') {
+  sessionStorage.setItem('akocp-password-recovery', '1')
+}
+
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-anon-key',

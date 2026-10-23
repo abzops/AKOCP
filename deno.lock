@@ -52,6 +52,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@electric-sql/pglite@0.5.11",
         "npm:@eslint/js@9.39.2",
         "npm:@fontsource/montserrat@5.2.8",
         "npm:@fontsource/poppins@5.2.7",

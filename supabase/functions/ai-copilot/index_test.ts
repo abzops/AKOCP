@@ -83,3 +83,9 @@ Deno.test("Qwen3 Next uses NVIDIA hosted non-thinking sampling options", () => {
   assertEquals(options.max_tokens, 800);
   assertEquals(JSON.stringify(options).includes("chat_template_kwargs"), false);
 });
+
+Deno.test("GPT OSS uses low reasoning effort for bounded agent latency", () => {
+  const options = providerOptions("openai/gpt-oss-20b", 800);
+  assertEquals(options.reasoning_effort, "low");
+  assertEquals(options.max_tokens, 800);
+});

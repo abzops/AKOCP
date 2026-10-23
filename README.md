@@ -6,7 +6,7 @@ The interface follows the supplied brand system: premium black surfaces, `#F4C40
 
 ## What v1 includes
 
-- Supabase email authentication with automatic Founder/Operations role assignment
+- Supabase email authentication with Founder-approved Operations access
 - inventory-first order creation to prevent duplicate karaoke work
 - Malayalam, English, Manglish, tag, and partial-title inventory search
 - controlled service catalog and price snapshots (`AU150`, `EX250`, `ML350`, `OL450`)
@@ -41,7 +41,7 @@ Production configuration is in `.env.production`. The Supabase anon key is inten
 1. Open the SQL Editor for project `cqptdpkhaiomitwzjysp`.
 2. Run [supabase/schema.sql](supabase/schema.sql) as one script.
 3. Apply every file in `supabase/migrations` in filename order.
-4. Register the first account through the app. It becomes `founder`; later accounts default to `operations`.
+4. Register the owner's account. After all migrations, new accounts are inactive Operations users. A trusted project administrator must assign the verified initial owner `role = 'founder', active = true`; subsequent accounts are approved by that Founder in Team access. Existing accounts are preserved.
 5. In Authentication settings, choose whether email confirmation is required.
 
 For an existing AK OCP project, apply unapplied migrations and deploy both Edge Functions:
@@ -62,6 +62,8 @@ The base schema plus ordered migrations create all tables, indexes, search suppo
 npm run typecheck
 npm run lint
 npm test
+npm run test:db
+npm run test:edge
 npm run build
 npm run preview
 ```
@@ -85,6 +87,7 @@ The Vite base path and PWA scope are configured for `https://abzops.github.io/AK
 | Approve/reject expenses | ✓ | — |
 | Request withdrawal | ✓ | ✓ |
 | Approve/reject withdrawal | ✓ | — |
+| Approve/deactivate team access | ✓ | — |
 | Change controlled prices | ✓ | — |
 | Analytics, roles, audit | ✓ | — |
 | Update monthly target | ✓ | ✓ |

@@ -1,6 +1,9 @@
 import { endOfMonth, endOfWeek, isAfter, isSameDay, startOfMonth, startOfWeek, subMonths } from 'date-fns'
 import type { AppSnapshot, DashboardMetrics, MonthlyTargetForecast } from '../types'
 
+const businessDayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' })
+const businessMonthFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' })
+
 const confirmedRevenue = (snapshot: AppSnapshot) =>
   snapshot.walletTransactions.filter((transaction) =>
     transaction.type === 'payment' ||
@@ -88,12 +91,16 @@ export function getMonthlyRevenue(snapshot: AppSnapshot, months = 6) {
 }
 
 export function getServiceRevenue(snapshot: AppSnapshot) {
+  const receivedByOrder = new Map<string, number>()
+  snapshot.payments.filter((payment) => payment.status === 'confirmed').forEach((payment) => {
+    receivedByOrder.set(payment.order_id, (receivedByOrder.get(payment.order_id) ?? 0) + payment.amount)
+  })
   const serviceRevenue = snapshot.services.map((service) => {
     const orders = snapshot.orders.filter((order) => order.service_id === service.id && order.payment_status === 'confirmed')
     return {
       name: service.code,
       label: service.name,
-      revenue: orders.reduce((sum, order) => sum + order.price, 0),
+      revenue: orders.reduce((sum, order) => sum + (receivedByOrder.get(order.id) ?? 0), 0),
       orders: orders.length
     }
   })
@@ -148,9 +155,9 @@ export function getFinanceOutflowAnalysis(snapshot: AppSnapshot) {
 
 export function getMonthlyTargetForecast(snapshot: AppSnapshot, now = new Date()): MonthlyTargetForecast {
   const target = Number(snapshot.monthlyTarget?.target_amount ?? 0)
-  const kolkata = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  const kolkata = businessDayFormatter.format(now)
   const monthKey = kolkata.slice(0, 7)
-  const earned = confirmedRevenue(snapshot).filter((transaction) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date(transaction.created_at)) === monthKey).reduce((sum, transaction) => sum + transaction.amount, 0)
+  const earned = confirmedRevenue(snapshot).filter((transaction) => businessMonthFormatter.format(new Date(transaction.created_at)) === monthKey).reduce((sum, transaction) => sum + transaction.amount, 0)
   const [, month, day] = kolkata.split('-').map(Number)
   const year = Number(kolkata.slice(0, 4))
   const totalDays = new Date(Date.UTC(year, month, 0)).getUTCDate()

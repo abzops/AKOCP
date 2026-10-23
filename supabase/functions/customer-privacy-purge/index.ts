@@ -24,7 +24,7 @@ function response(body: unknown, status = 200) {
   })
 }
 
-async function removeProofs(admin: AdminClient, purgeId: string, paths: string[]) {
+async function removeProofs(admin: AdminClient, purgeId: string, paths: string[], priorAttempts = 0) {
   if (!paths.length) return 'completed'
   let lastError = ''
 
@@ -32,7 +32,7 @@ async function removeProofs(admin: AdminClient, purgeId: string, paths: string[]
     const { error } = await admin.storage.from('payment-proofs').remove(paths)
     if (!error) {
       await admin.from('customer_privacy_purge_jobs').update({
-        status: 'completed', proof_paths: [], attempts: attempt, last_error: null, updated_at: new Date().toISOString()
+        status: 'completed', proof_paths: [], attempts: priorAttempts + attempt, last_error: null, updated_at: new Date().toISOString()
       }).eq('purge_id', purgeId)
       await admin.from('customer_privacy_purge_tombstones').update({ proof_cleanup_status: 'completed' }).eq('id', purgeId)
       return 'completed'
@@ -41,7 +41,7 @@ async function removeProofs(admin: AdminClient, purgeId: string, paths: string[]
   }
 
   await admin.from('customer_privacy_purge_jobs').update({
-    status: 'failed', attempts: 3, last_error: lastError, updated_at: new Date().toISOString()
+    status: 'failed', attempts: priorAttempts + 3, last_error: lastError, updated_at: new Date().toISOString()
   }).eq('purge_id', purgeId)
   await admin.from('customer_privacy_purge_tombstones').update({ proof_cleanup_status: 'failed' }).eq('id', purgeId)
   return 'failed'
@@ -50,13 +50,13 @@ async function removeProofs(admin: AdminClient, purgeId: string, paths: string[]
 async function retryPending(admin: AdminClient) {
   const { data } = await admin
     .from('customer_privacy_purge_jobs')
-    .select('purge_id, proof_paths')
+    .select('purge_id, proof_paths, attempts')
     .in('status', ['pending', 'failed'])
     .lt('attempts', 9)
     .limit(3)
 
-  for (const job of (data ?? []) as Array<{ purge_id: string; proof_paths: string[] }>) {
-    await removeProofs(admin, String(job.purge_id), Array.isArray(job.proof_paths) ? job.proof_paths : [])
+  for (const job of (data ?? []) as Array<{ purge_id: string; proof_paths: string[]; attempts: number }>) {
+    await removeProofs(admin, String(job.purge_id), Array.isArray(job.proof_paths) ? job.proof_paths : [], job.attempts)
   }
 }
 
@@ -79,6 +79,10 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
 
   try {
+    const { data: authData, error: authError } = await caller.auth.getUser()
+    if (authError || !authData.user) return response({ error: 'Authentication required' }, 401)
+    const { data: profile, error: profileError } = await caller.from('profiles').select('role,active').eq('id', authData.user.id).single()
+    if (profileError || !profile?.active || profile.role !== 'founder') return response({ error: 'Founder permission is required' }, 403)
     const payload = await request.json() as PurgeRequest
     if (!payload.customerId || !['preview', 'confirm'].includes(payload.action)) {
       return response({ error: 'Invalid purge request' }, 400)

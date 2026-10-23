@@ -69,13 +69,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           snapshotRef.current = next
           setSnapshot(next)
           setError(null)
-          await set(cacheKey, next)
+          setOffline(false)
+          // Cache failures must not turn a successful network response into stale data.
+          await set(cacheKey, next).catch(() => undefined)
           requested = [...pendingDomains.current]
           pendingDomains.current.clear()
         } while (requested.length)
       } catch (loadError) {
         const message = loadError instanceof Error ? loadError.message : 'Could not load workspace data.'
-        const cached = await get<AppSnapshot>(cacheKey)
+        const cached = await get<AppSnapshot>(cacheKey).catch(() => undefined)
         if (cached) {
           const compatible = cached.inventorySummary ? cached : {
             ...cached,
@@ -94,8 +96,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }
     }
     refreshInFlight.current = run()
-    await refreshInFlight.current
-    refreshInFlight.current = null
+    try {
+      await refreshInFlight.current
+    } finally {
+      refreshInFlight.current = null
+    }
   }, [cacheKey, profile, service])
 
   useEffect(() => {

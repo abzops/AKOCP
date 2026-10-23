@@ -116,6 +116,7 @@ describe('business analytics', () => {
     const groups = getServiceRevenue(snapshot)
     expect(groups).toHaveLength(5)
     expect(groups.find((group) => group.name === 'EX250')?.orders).toBeGreaterThan(0)
+    expect(groups.find((group) => group.name === 'EX250')?.revenue).toBe(1_000)
     expect(groups.find((group) => group.name === 'REC')?.revenue).toBe(1_150)
     expect(groups.every((group) => group.revenue >= 0)).toBe(true)
   })

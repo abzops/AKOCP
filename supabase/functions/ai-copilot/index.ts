@@ -34,7 +34,6 @@ type ProviderResponse = {
 };
 
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const NVIDIA_LLAMA_33 = "meta/llama-3.3-70b-instruct";
 const MAX_TOOL_ROUNDS = 4;
 const MAX_ROWS = 25;
 const MAX_TOOL_RESULT_CHARS = 16000;
@@ -181,9 +180,10 @@ export class ProviderError extends Error {
 
 export function providerOptions(model: string, maxTokens: number) {
   return {
-    temperature: 0.2,
+    temperature: model.startsWith("qwen/") ? 0.6 : 0.2,
     top_p: 0.7,
     max_tokens: maxTokens,
+    ...(model === "openai/gpt-oss-20b" ? { reasoning_effort: "low" } : {}),
   };
 }
 
@@ -210,6 +210,7 @@ async function callProvider(
       stream: !!onChunk,
       ...providerOptions(model, maxTokens),
     }),
+    signal: AbortSignal.timeout(90_000),
   });
 
   if (!response.ok) {
@@ -1222,12 +1223,17 @@ export async function handleRequest(request: Request) {
 
     // Health check: fast 1-token NVIDIA ping, no quota consumed
     if (body.action === "health_check") {
+      const { data: callerProfile, error: callerError } = await client.from("profiles")
+        .select("role,active").eq("id", userId).single();
+      if (callerError || !callerProfile?.active || callerProfile.role !== "founder") {
+        return jsonResponse(request, { error: "Founder permission is required" }, 403);
+      }
       if (!nvidiaKey) {
         return jsonResponse(request, { provider_status: "unavailable", error: "NVIDIA_API_KEY not configured" }, 503);
       }
       try {
         const { data: settingsRow } = await client.from("ai_settings").select("primary_model").eq("id", 1).single();
-        const modelToCheck = String(settingsRow?.primary_model ?? "meta/llama-3.3-70b-instruct");
+        const modelToCheck = String(settingsRow?.primary_model ?? "openai/gpt-oss-20b");
         await callProvider(nvidiaKey, modelToCheck, [{ role: "user", content: "hi" }], [], 1, false);
         if (serviceKey) {
           const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
@@ -1373,7 +1379,7 @@ export async function handleRequest(request: Request) {
       })();
 
       return new Response(stream.readable, {
-        headers: { ...corsHeaders(request.headers.get("origin") || "*"), "Content-Type": "text/event-stream" },
+        headers: { ...corsHeaders(request), "Content-Type": "text/event-stream" },
       });
     }
 

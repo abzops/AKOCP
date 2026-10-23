@@ -1,6 +1,8 @@
 node_modules
 .pnpm-store
 .git-push-temp
+supabase/.temp/cli-latest
+.private-backups/
 dist
 .env
 .env.local

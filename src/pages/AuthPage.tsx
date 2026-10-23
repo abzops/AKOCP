@@ -61,7 +61,7 @@ export function AuthPage() {
       <section className="auth-panel">
         <div className="mobile-auth-brand"><BrandMark withName /></div>
         <div className="auth-card">
-          <div className="auth-heading"><span>{mode === 'signin' ? 'Welcome back' : 'Create your account'}</span><h2>{mode === 'signin' ? 'Sign in to AK OCP' : 'Join the operations team'}</h2><p>{mode === 'signin' ? 'Use your approved business account to continue.' : 'The first account becomes Founder. Later accounts join Operations.'}</p></div>
+          <div className="auth-heading"><span>{mode === 'signin' ? 'Welcome back' : 'Create your account'}</span><h2>{mode === 'signin' ? 'Sign in to AK OCP' : 'Join the operations team'}</h2><p>{mode === 'signin' ? 'Use your approved business account to continue.' : 'New accounts require Founder approval before accessing business data.'}</p></div>
           <div className="auth-tabs"><button className={cn(mode === 'signin' && 'active')} onClick={() => setMode('signin')}>Sign in</button><button className={cn(mode === 'signup' && 'active')} onClick={() => setMode('signup')}>Register</button></div>
           <form onSubmit={submit} className="auth-form">
             {mode === 'signup' && <div className="input-with-icon"><UserRound size={18} /><Input label="Full name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" autoComplete="name" required minLength={2} /></div>}

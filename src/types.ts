@@ -241,8 +241,8 @@ export interface AiActionProposal {
 export interface AiSettings {
   id: number
   enabled: boolean
-  primary_model: 'meta/llama-3.3-70b-instruct' | 'openai/gpt-oss-20b'
-  fallback_model: 'meta/llama-3.3-70b-instruct' | 'openai/gpt-oss-20b'
+  primary_model: 'openai/gpt-oss-20b'
+  fallback_model: 'openai/gpt-oss-20b'
   daily_request_limit: number
   max_output_tokens: number
   provider_status: 'not_checked' | 'available' | 'degraded' | 'unavailable'
@@ -459,6 +459,7 @@ export interface DataService {
   updateService(id: string, input: Pick<Service, 'name' | 'price' | 'active'>, actor: Profile): Promise<void>
   markNotificationsRead(ids: string[], actor: Profile): Promise<void>
   updateProfileRole(id: string, role: Role, actor: Profile): Promise<void>
+  setProfileAccess(id: string, active: boolean, actor: Profile): Promise<void>
 }
 
 export interface ToastMessage {

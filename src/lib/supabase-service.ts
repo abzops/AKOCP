@@ -1,5 +1,6 @@
 import type { AppSnapshot, CreateOrderInput, CreateTrackInput, CustomerPurgePreview, CustomerPurgeResult, DataService, ExpenseCategory, InventoryPageResult, InventoryQuery, InventorySummary, InventoryTrack, Order, OrderDeletionPreview, OrderDeletionResult, OrderStatus, Profile, RefreshDomain, Role, Service, WithdrawalReason } from '../types'
 import { normalizeSupabaseError, supabase } from './supabase'
+import { fetchAllRows } from './paging'
 
 const INVENTORY_PAGE_SIZE = 50
 const currentMonthStart = () => `${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date())}-01`
@@ -76,18 +77,18 @@ export const supabaseDataService: DataService = {
   async loadSnapshot(userId: string) {
     void retryPendingOrderProofs()
     const [services, profiles, customers, inventorySummary, orders, recordedSales, payments, expenses, withdrawals, notifications, audits, transactions, monthlyTarget] = await Promise.all([
-      supabase.from('services').select('*').order('sort_order'),
-      supabase.from('profiles').select('*').eq('active', true).order('full_name'),
-      supabase.from('customers').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false }),
+      fetchAllRows((from, to) => supabase.from('services').select('*').order('sort_order').order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('profiles').select('*').order('full_name').order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('customers').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false }).order('id').range(from, to)),
       supabase.rpc('inventory_summary'),
-      supabase.from('orders').select('*, customer:customers(id,name,phone), service:services(id,code,name,price), assignee:profiles!orders_assigned_to_fkey(id,full_name)').is('deleted_at', null).order('created_at', { ascending: false }),
-      supabase.from('recorded_sales').select('*').order('record_date', { ascending: false }).order('source_ref', { ascending: false }),
-      supabase.from('payments').select('*').order('created_at', { ascending: false }),
-      supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name), reviewer:profiles!expenses_reviewed_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
-      supabase.from('withdrawals').select('*, requester:profiles!withdrawals_requested_by_fkey(id,full_name), approver:profiles!withdrawals_approved_by_fkey(id,full_name)').order('created_at', { ascending: false }),
+      fetchAllRows((from, to) => supabase.from('orders').select('*, customer:customers(id,name,phone), service:services(id,code,name,price), assignee:profiles!orders_assigned_to_fkey(id,full_name)').is('deleted_at', null).order('created_at', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('recorded_sales').select('*').order('record_date', { ascending: false }).order('source_ref', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('payments').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name), reviewer:profiles!expenses_reviewed_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('withdrawals').select('*, requester:profiles!withdrawals_requested_by_fkey(id,full_name), approver:profiles!withdrawals_approved_by_fkey(id,full_name)').order('created_at', { ascending: false }).order('id').range(from, to)),
       supabase.from('notifications').select('*').eq('recipient_id', userId).order('created_at', { ascending: false }).limit(50),
       supabase.from('audit_logs').select('*, actor:profiles!audit_logs_actor_id_fkey(id,full_name)').order('created_at', { ascending: false }).limit(100),
-      supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }),
+      fetchAllRows((from, to) => supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
       supabase.from('monthly_revenue_targets').select('*').eq('month_start', currentMonthStart()).maybeSingle()
     ])
     const error = [services, profiles, customers, inventorySummary, orders, recordedSales, payments, expenses, withdrawals, notifications, audits, transactions, monthlyTarget].find((result) => result.error)?.error
@@ -116,15 +117,15 @@ export const supabaseDataService: DataService = {
     const tasks: Promise<void>[] = []
 
     if (requested.has('services')) tasks.push((async () => {
-      const result = await supabase.from('services').select('*').order('sort_order')
+      const result = await fetchAllRows((from, to) => supabase.from('services').select('*').order('sort_order').order('id').range(from, to))
       assertNoError(result.error); next.services = result.data ?? []
     })())
     if (requested.has('profiles')) tasks.push((async () => {
-      const result = await supabase.from('profiles').select('*').eq('active', true).order('full_name')
+      const result = await fetchAllRows((from, to) => supabase.from('profiles').select('*').order('full_name').order('id').range(from, to))
       assertNoError(result.error); next.profiles = result.data ?? []
     })())
     if (requested.has('customers')) tasks.push((async () => {
-      const result = await supabase.from('customers').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false })
+      const result = await fetchAllRows((from, to) => supabase.from('customers').select('*').is('deleted_at', null).order('last_ordered_at', { ascending: false, nullsFirst: false }).order('id').range(from, to))
       assertNoError(result.error); next.customers = result.data ?? []
     })())
     if (requested.has('inventory')) tasks.push((async () => {
@@ -132,22 +133,22 @@ export const supabaseDataService: DataService = {
       assertNoError(result.error); next.inventorySummary = parseInventorySummary(result.data)
     })())
     if (requested.has('orders')) tasks.push((async () => {
-      const result = await supabase.from('orders').select('*, customer:customers(id,name,phone), service:services(id,code,name,price), assignee:profiles!orders_assigned_to_fkey(id,full_name)').is('deleted_at', null).order('created_at', { ascending: false })
+      const result = await fetchAllRows((from, to) => supabase.from('orders').select('*, customer:customers(id,name,phone), service:services(id,code,name,price), assignee:profiles!orders_assigned_to_fkey(id,full_name)').is('deleted_at', null).order('created_at', { ascending: false }).order('id').range(from, to))
       assertNoError(result.error); next.orders = (result.data ?? []) as unknown as AppSnapshot['orders']
     })())
     if (requested.has('payments')) tasks.push((async () => {
-      const result = await supabase.from('payments').select('*').order('created_at', { ascending: false })
+      const result = await fetchAllRows((from, to) => supabase.from('payments').select('*').order('created_at', { ascending: false }).order('id').range(from, to))
       assertNoError(result.error); next.payments = result.data ?? []
     })())
     if (requested.has('recordedSales')) tasks.push((async () => {
-      const result = await supabase.from('recorded_sales').select('*').order('record_date', { ascending: false }).order('source_ref', { ascending: false })
+      const result = await fetchAllRows((from, to) => supabase.from('recorded_sales').select('*').order('record_date', { ascending: false }).order('source_ref', { ascending: false }).order('id').range(from, to))
       assertNoError(result.error); next.recordedSales = (result.data ?? []) as AppSnapshot['recordedSales']
     })())
     if (requested.has('finance')) tasks.push((async () => {
       const [expenses, withdrawals, transactions] = await Promise.all([
-        supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name), reviewer:profiles!expenses_reviewed_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }),
-        supabase.from('withdrawals').select('*, requester:profiles!withdrawals_requested_by_fkey(id,full_name), approver:profiles!withdrawals_approved_by_fkey(id,full_name)').order('created_at', { ascending: false }),
-        supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false })
+        fetchAllRows((from, to) => supabase.from('expenses').select('*, creator:profiles!expenses_added_by_fkey(id,full_name), reviewer:profiles!expenses_reviewed_by_fkey(id,full_name)').is('deleted_at', null).order('expense_date', { ascending: false }).order('id').range(from, to)),
+        fetchAllRows((from, to) => supabase.from('withdrawals').select('*, requester:profiles!withdrawals_requested_by_fkey(id,full_name), approver:profiles!withdrawals_approved_by_fkey(id,full_name)').order('created_at', { ascending: false }).order('id').range(from, to)),
+        fetchAllRows((from, to) => supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }).order('id').range(from, to))
       ])
       assertNoError(expenses.error || withdrawals.error || transactions.error)
       next.expenses = (expenses.data ?? []) as unknown as AppSnapshot['expenses']
@@ -384,6 +385,11 @@ export const supabaseDataService: DataService = {
   async markNotificationsRead(ids: string[]) {
     if (!ids.length) return
     const { error } = await supabase.from('notifications').update({ read_at: new Date().toISOString() }).in('id', ids)
+    assertNoError(error)
+  },
+
+  async setProfileAccess(id: string, active: boolean) {
+    const { error } = await supabase.rpc('set_profile_access', { p_profile_id: id, p_active: active })
     assertNoError(error)
   },
 

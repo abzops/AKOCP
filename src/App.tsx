@@ -2,11 +2,12 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/AppLayout'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { LoadingScreen } from './components/ui'
+import { Button, LoadingScreen } from './components/ui'
 import { AppDataProvider, useAppData } from './context/AppDataContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { AuthPage } from './pages/AuthPage'
 import { SetupRequiredPage } from './pages/SetupRequiredPage'
+import { PasswordRecoveryPage } from './pages/PasswordRecoveryPage'
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })))
 const OrdersPage = lazy(() => import('./pages/OrdersPage').then((module) => ({ default: module.OrdersPage })))
@@ -21,9 +22,11 @@ export default function App() {
 }
 
 function AuthGate() {
-  const { profile, loading } = useAuth()
+  const { profile, loading, passwordRecovery, signOut } = useAuth()
   if (loading) return <LoadingScreen label="Securing your workspace…" />
+  if (passwordRecovery) return <PasswordRecoveryPage />
   if (!profile) return <AuthPage />
+  if (!profile.active) return <main className="auth-page"><section className="auth-panel"><div className="auth-card"><div className="auth-heading"><h2>Workspace access is pending</h2><p>A Founder must approve or restore access for {profile.email}.</p></div><Button onClick={() => void signOut()}>Sign out</Button></div></section></main>
   return <AppDataProvider><Workspace /></AppDataProvider>
 }
 
