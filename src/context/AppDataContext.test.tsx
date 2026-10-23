@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AppDataProvider, useAppData } from './AppDataContext'
 
 const mocks = vi.hoisted(() => ({
@@ -59,7 +59,19 @@ describe('network and cache recovery', () => {
     function CacheRaceProbe(){const {snapshot,offline}=useAppData();return <span>{snapshot?`${snapshot.syncedAt} ${offline?'cached':'live'}`:'waiting'}</span>}
     render(<AppDataProvider><CacheRaceProbe/></AppDataProvider>)
     expect(await screen.findByText('fresh live')).toBeInTheDocument()
-    resolveCache({inventorySummary:{},syncedAt:'old'})
+    await act(async()=>resolveCache({inventorySummary:{},syncedAt:'old'}))
     await waitFor(()=>expect(screen.getByText('fresh live')).toBeInTheDocument())
+  })
+  it('keeps cached writes locked on reconnect until the live request is verified',async()=>{
+    const snapshot={inventorySummary:{},syncedAt:'2026-10-23T10:00:00Z'}
+    let resolveLoad!:(value:unknown)=>void
+    mocks.get.mockResolvedValue(snapshot);mocks.set.mockResolvedValue(undefined)
+    mocks.load.mockRejectedValueOnce(new Error('Offline')).mockImplementation(()=>new Promise(resolve=>{resolveLoad=resolve}))
+    render(<AppDataProvider><Probe/></AppDataProvider>)
+    expect(await screen.findByText('offline')).toBeInTheDocument()
+    fireEvent(window,new Event('online'))
+    expect(screen.queryByText('online')).not.toBeInTheDocument()
+    await act(async()=>resolveLoad(snapshot))
+    expect(await screen.findByText('online')).toBeInTheDocument()
   })
 })

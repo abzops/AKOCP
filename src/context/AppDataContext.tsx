@@ -125,7 +125,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const online = () => {
-      setOffline(false)
       void refresh()
     }
     const offlineHandler = () => setOffline(true)
