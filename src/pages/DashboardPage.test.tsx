@@ -10,11 +10,23 @@ vi.mock('react-router-dom',()=>({useNavigate:()=>state.navigate}))
 vi.mock('../context/AuthContext',()=>({useAuth:()=>({profile:{full_name:'Owner',role:'founder'}})}))
 vi.mock('../context/AppDataContext',()=>({useAppData:()=>({snapshot:state.snapshot,offline:false})}))
 vi.mock('../lib/format',async importOriginal=>({...await importOriginal<typeof import('../lib/format')>(),downloadCsv:state.csv}))
-vi.mock('recharts',()=>({Area:()=>null,AreaChart:()=>null,CartesianGrid:()=>null,ResponsiveContainer:()=>null,Tooltip:()=>null,XAxis:()=>null,YAxis:()=>null}))
+vi.mock('recharts',()=>({Area:()=>null,AreaChart:()=>null,Line:()=>null,LineChart:()=>null,CartesianGrid:()=>null,ResponsiveContainer:()=>null,Tooltip:()=>null,XAxis:()=>null,YAxis:()=>null}))
 beforeEach(()=>{vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-23T09:00:00Z'))})
 afterEach(()=>{cleanup();vi.useRealTimers();vi.clearAllMocks()})
 const financialCard=(name:string)=>screen.getByText(name,{exact:true}).closest('section')!
 describe('dashboard controls',()=>{
+  it('leads with the current-month target and keeps it independent of report filters',()=>{
+    Object.assign(state.snapshot,{monthlyTarget:{month_start:'2026-10-01',target_amount:1000,updated_by:'owner',updated_at:'2026-10-23'}})
+    render(<DashboardPage/>);
+    const target=screen.getByRole('region',{name:'Current monthly revenue target'})
+    expect(within(target).getByRole('img',{name:'15.0 percent of monthly target received'})).toBeInTheDocument()
+    expect(within(target).getByText('₹95')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'All time'}))
+    expect(within(target).getByText('₹150',{exact:true})).toBeInTheDocument()
+    expect(within(target).getByText('₹850',{exact:true})).toBeInTheDocument()
+    expect(target.compareDocumentPosition(screen.getByRole('region',{name:'Dashboard date filters'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    Object.assign(state.snapshot,{monthlyTarget:null})
+  })
   it('switches all-time and daily financial data while keeping the wallet current',()=>{
     render(<DashboardPage/>);
     fireEvent.click(screen.getByRole('button',{name:'All time'}))

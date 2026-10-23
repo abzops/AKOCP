@@ -140,3 +140,19 @@ export function dashboardData(snapshot:AppSnapshot,period:DashboardPeriod,anchor
 export function orderAttention(order:Order,today:string) {
   return order.due_date&&order.due_date<today?'Overdue':order.due_date===today?'Due today':order.status==='completed'?'Ready to deliver':'Open'
 }
+
+export function monthlyTargetSeries(snapshot:AppSnapshot,now=new Date()) {
+  const today=businessDate(now),start=`${today.slice(0,7)}-01`
+  const days=Number(monthEnd(start).slice(-2)),elapsed=Number(today.slice(-2))
+  const target=Number(snapshot.monthlyTarget?.target_amount??0)
+  const index=reportIndex(snapshot)
+  let earned=0
+  for(let day=1;day<=elapsed;day++)earned+=index.get(`${today.slice(0,7)}-${String(day).padStart(2,'0')}`)?.revenue??0
+  let cumulative=0
+  return Array.from({length:days},(_,i)=>{
+    const day=i+1,key=`${today.slice(0,7)}-${String(day).padStart(2,'0')}`
+    if(day<=elapsed)cumulative+=index.get(key)?.revenue??0
+    return {day,date:key,actual:day<=elapsed?cumulative:null,plan:target?target*day/days:null,
+      projection:target&&day>=elapsed?earned+earned/elapsed*(day-elapsed):null}
+  })
+}

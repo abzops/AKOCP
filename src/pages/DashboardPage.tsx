@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, Music2, Pencil, Plus, Target, TrendingUp, UsersRound, WalletCards } from 'lucide-react'
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, Music2, Plus, TrendingUp, UsersRound, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -8,6 +8,7 @@ import { useAppData } from '../context/AppDataContext'
 import { getMonthlyTargetForecast } from '../lib/analytics'
 import { businessDate, dashboardData, displayDay, orderAttention, shiftDay, type BreakdownUnit, type DashboardPeriod } from '../lib/dashboard'
 import { downloadCsv, formatCurrency, statusLabels } from '../lib/format'
+import { DashboardTarget } from './DashboardTarget'
 import './dashboard.css'
 
 const periodLabels:Record<DashboardPeriod,string>={day:'Day',week:'Week',month:'Month',all:'All time'}
@@ -25,9 +26,9 @@ export function DashboardPage() {
   const [clock,setClock]=useState(()=>new Date())
   useEffect(()=>{const timer=window.setInterval(()=>setClock(new Date()),60000);return()=>window.clearInterval(timer)},[])
   const data=useMemo(()=>snapshot?dashboardData(snapshot,period,anchor,unit,clock):null,[snapshot,period,anchor,unit,clock])
-  if(!snapshot||!data)return null
+  const forecast=useMemo(()=>snapshot?getMonthlyTargetForecast(snapshot,clock):null,[snapshot,clock])
+  if(!snapshot||!data||!forecast)return null
   const {totals,previous,range}=data
-  const forecast=getMonthlyTargetForecast(snapshot,clock)
   const selectPeriod=(next:DashboardPeriod)=>{setPeriod(next);setPage(0);setUnit(next==='all'?'month':'day')}
   const move=(direction:number)=>{
     const day=period==='week'?shiftDay(anchor,7*direction):period==='month'?(()=>{const d=new Date(`${anchor.slice(0,7)}-01T00:00:00Z`);d.setUTCMonth(d.getUTCMonth()+direction);return d.toISOString().slice(0,10)})():shiftDay(anchor,direction)
@@ -41,7 +42,9 @@ export function DashboardPage() {
   const liveDateLabel=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(new Date(snapshot.syncedAt))
   return <div className="page-stack dashboard-page business-dashboard">
     {offline&&<div className="form-alert error" role="status">Offline snapshot · reconnect for current balances and order status. Last synced {liveDateLabel}.</div>}
-    <PageHeader eyebrow="Business overview" title="Your business, at a glance." description={`Welcome, ${profile?.full_name?.split(' ')[0]??'Abhinand'}. Track money, deliveries, and the work that needs you.`} action={<div className="button-row"><Button variant="secondary" icon={<Download size={16}/>} onClick={exportReport}>Export report</Button><Button icon={<Plus size={17}/>} onClick={()=>navigate('/orders?new=1')}>New order</Button></div>}/>
+    <PageHeader eyebrow="Business overview" title="Your target, in focus." description="Know your progress, follow your daily pace, and keep every order moving." action={<div className="button-row"><Button variant="secondary" icon={<Download size={16}/>} onClick={exportReport}>Export report</Button><Button icon={<Plus size={17}/>} onClick={()=>navigate('/orders?new=1')}>New order</Button></div>}/>
+    <DashboardTarget snapshot={snapshot} forecast={forecast} now={clock} onEdit={()=>setTargetOpen(true)}/>
+    <div className="dash-report-heading"><h2>Explore your business</h2><p>Choose a period for money, orders, and customer activity.</p></div>
     <section className="dash-period-bar" aria-label="Dashboard date filters">
       <div className="dash-period-tabs" role="group" aria-label="Report period">{(Object.keys(periodLabels) as DashboardPeriod[]).map(item=><button key={item} aria-pressed={period===item} className={cn(period===item&&'active')} onClick={()=>selectPeriod(item)}>{periodLabels[item]}</button>)}</div>
       <div className="dash-date-controls">{period!=='all'&&<><button className="icon-btn" aria-label="Previous period" onClick={()=>move(-1)}><ChevronLeft size={17}/></button><label><CalendarDays size={16}/><span className="sr-only">Choose report date</span><input aria-label="Choose report date" type="date" value={anchor} max={data.today} onChange={e=>{if(e.target.value){setAnchor(e.target.value);setPage(0)}}}/></label><button className="icon-btn" aria-label="Next period" disabled={range.to>=data.today} onClick={()=>move(1)}><ChevronRight size={17}/></button><button className="dash-today" onClick={()=>{setAnchor(data.today);setPage(0)}}>Today</button></>}</div>
@@ -83,7 +86,7 @@ export function DashboardPage() {
 
     <Card className="dash-breakdown"><div className="dash-section-title"><div><span>Selected period · latest six</span><h2>New order activity</h2></div><button className="text-action" onClick={()=>navigate('/orders')}>All orders <ArrowRight size={15}/></button></div>{data.latestOrders.length?<div className="responsive-table"><table><thead><tr><th>Order / song</th><th>Customer</th><th>Payment</th><th>Status</th><th className="align-right">Order value</th><th/></tr></thead><tbody>{data.latestOrders.map(order=><tr key={order.id}><td><strong>{order.order_number}</strong><small>{order.track_name}</small></td><td>{order.customer?.name??'Customer'}</td><td><StatusBadge status={order.payment_status}/></td><td><StatusBadge status={order.status}/></td><td className="align-right">{formatCurrency(order.price)}</td><td><button className="text-action" aria-label={`Open ${order.order_number}`} onClick={()=>navigate(`/orders?order=${order.id}`)}>Open <ArrowRight size={14}/></button></td></tr>)}</tbody></table></div>:<EmptyState title="No new orders in this period" description="Use a different date or create a new order."/>}</Card>
 
-    <MonthlyTargetCard forecast={forecast} onEdit={()=>setTargetOpen(true)}/><MonthlyTargetModal open={targetOpen} onClose={()=>setTargetOpen(false)} initialValue={forecast.target}/>
+    <MonthlyTargetModal open={targetOpen} onClose={()=>setTargetOpen(false)} initialValue={forecast.target}/>
     <details className="dash-definitions"><summary>How these numbers are calculated</summary><p>All dates use Asia/Kolkata. Revenue, expenses, withdrawals, and adjustments use the date recorded in the wallet ledger. Surplus is received revenue minus approved expense debits; it is not an accounting profit statement. Orders, completions, deliveries, and customers each use their own event dates. Registration counts may include historical customers imported later. Current wallet and work queues always show the current state, regardless of the selected period. Comparisons use the previous day or the same number of calendar days in the previous week or month. Current-day receipts are compared with the full previous day. Monthly target always refers to the current month.</p><p>Last synced {liveDateLabel} · {totals.recordedSales} owner-recorded sales dated in the selection; these are not added again to cash totals.</p></details>
   </div>
 }
@@ -93,11 +96,6 @@ function DashboardNumber({label,value,note,icon,tone}:{label:string;value:string
 }
 function Priority({title,count,note,urgent,onClick}:{title:string;count:number;note:string;urgent?:boolean;onClick():void}){
   return <button className={cn('dash-priority',urgent&&count>0&&'urgent')} onClick={onClick}><span>{title}<ArrowRight size={14}/></span><strong>{count}</strong><small>{note}</small></button>
-}
-
-function MonthlyTargetCard({ forecast, onEdit }: { forecast: ReturnType<typeof getMonthlyTargetForecast>; onEdit(): void }) {
-  const statusLabel = forecast.status === 'not_set' ? 'Set target' : forecast.status === 'on_track' ? 'On track' : forecast.status === 'behind' ? 'Behind pace' : 'Achieved'
-  return <Card className="monthly-target-card"><div className="target-card-heading"><span className="target-icon"><Target size={22} /></span><div><span>Monthly revenue target</span><h2>{forecast.target ? formatCurrency(forecast.target) : 'No target set'}</h2></div><Badge tone={forecast.status === 'achieved' || forecast.status === 'on_track' ? 'green' : forecast.status === 'behind' ? 'red' : 'yellow'}>{statusLabel}</Badge><Button variant="secondary" icon={<Pencil size={15} />} onClick={onEdit}>{forecast.target ? 'Edit' : 'Set target'}</Button></div>{forecast.target > 0 && <><div className="target-progress"><i style={{ width: `${forecast.progressPercent}%` }} /></div><div className="target-metrics"><span><small>Earned</small><strong>{formatCurrency(forecast.earned)}</strong></span><span><small>Remaining</small><strong>{formatCurrency(forecast.remaining)}</strong></span><span><small>Needed daily</small><strong>{formatCurrency(forecast.dailyRequired)}</strong></span><span><small>Projected month-end</small><strong>{formatCurrency(forecast.projectedMonthEnd)}</strong></span><span><small>Days left</small><strong>{forecast.daysRemaining}</strong></span></div></>}</Card>
 }
 
 function MonthlyTargetModal({ open, onClose, initialValue }: { open: boolean; onClose(): void; initialValue: number }) {

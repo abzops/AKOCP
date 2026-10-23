@@ -139,5 +139,7 @@ describe('business analytics', () => {
     expect(result.daysRemaining).toBe(17)
     expect(result.dailyRequired).toBe(56)
     expect(result.projectedMonthEnd).toBeCloseTo(4_443.33, 1)
+    snapshot.walletTransactions.push({ id:'future',type:'payment',amount:999,reference_type:'payment',reference_id:'future',description:'Future receipt',created_at:'2026-07-16T08:00:00Z' })
+    expect(getMonthlyTargetForecast(snapshot,new Date('2026-07-15T08:00:00Z')).earned).toBe(result.earned)
   })
 })

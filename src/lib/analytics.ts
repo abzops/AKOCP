@@ -2,7 +2,6 @@ import { endOfMonth, endOfWeek, isAfter, isSameDay, startOfMonth, startOfWeek, s
 import type { AppSnapshot, DashboardMetrics, MonthlyTargetForecast } from '../types'
 
 const businessDayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' })
-const businessMonthFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' })
 
 const confirmedRevenue = (snapshot: AppSnapshot) =>
   snapshot.walletTransactions.filter((transaction) =>
@@ -157,7 +156,10 @@ export function getMonthlyTargetForecast(snapshot: AppSnapshot, now = new Date()
   const target = Number(snapshot.monthlyTarget?.target_amount ?? 0)
   const kolkata = businessDayFormatter.format(now)
   const monthKey = kolkata.slice(0, 7)
-  const earned = confirmedRevenue(snapshot).filter((transaction) => businessMonthFormatter.format(new Date(transaction.created_at)) === monthKey).reduce((sum, transaction) => sum + transaction.amount, 0)
+  const earned = confirmedRevenue(snapshot).filter((transaction) => {
+    const day = businessDayFormatter.format(new Date(transaction.created_at))
+    return day.startsWith(monthKey) && day <= kolkata
+  }).reduce((sum, transaction) => sum + transaction.amount, 0)
   const [, month, day] = kolkata.split('-').map(Number)
   const year = Number(kolkata.slice(0, 4))
   const totalDays = new Date(Date.UTC(year, month, 0)).getUTCDate()

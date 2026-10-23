@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest'
 import type {AppSnapshot,Order,WalletTransaction} from '../types'
-import {businessDate,dashboardData,dashboardRange,periodTotals} from './dashboard'
+import {businessDate,dashboardData,dashboardRange,monthlyTargetSeries,periodTotals} from './dashboard'
 
 const tx=(id:string,type:WalletTransaction['type'],amount:number,at:string,reference_type='payment',reference_id=id):WalletTransaction=>({id,type,amount,created_at:at,reference_type,reference_id,description:id})
 const order=(id:string,created_at:string,overrides:Partial<Order>={}):Order=>({id,order_number:id,customer_id:'customer',service_id:'audio',track_name:id,language:'Malayalam',status:'delivered',payment_status:'confirmed',price:999,created_by:'owner',created_at,updated_at:created_at,...overrides})
@@ -13,6 +13,18 @@ function snapshot():AppSnapshot{return {
   recordedSales:[{id:'recorded',source_ref:'source',record_date:'2026-10-23',quoted_amount:150,currency:'INR',verified:true,fulfillment_hint:'audio',created_at:'2026-10-23'}],expenses:[],withdrawals:[],notifications:[],auditLogs:[],monthlyTarget:null,syncedAt:'2026-10-23T10:00:00Z'
 }}
 describe('dashboard reporting',()=>{
+  it('plots current-month receipts cumulatively and keeps future receipts out of the projection',()=>{
+    const data=snapshot()
+    data.monthlyTarget={month_start:'2026-10-01',target_amount:3100,updated_by:'owner',updated_at:'2026-10-23'}
+    data.walletTransactions.push(tx('future','payment',900,'2026-10-24T12:00:00Z'))
+    const series=monthlyTargetSeries(data,new Date('2026-10-23T10:00:00Z'))
+    expect(series).toHaveLength(31)
+    expect(series[21]).toMatchObject({actual:20,plan:2200,projection:null})
+    expect(series[22]).toMatchObject({actual:320,plan:2300,projection:320})
+    expect(series[23].actual).toBeNull()
+    expect(series[30].projection).toBeCloseTo(320/23*31)
+    expect(series[30].plan).toBe(3100)
+  })
   it('uses India midnight and each event date without counting quoted prices as revenue',()=>{
     const totals=periodTotals(snapshot(),'2026-10-23','2026-10-23')
     expect(businessDate('2026-10-22T18:30:00Z')).toBe('2026-10-23')
