@@ -116,6 +116,14 @@ try {
   assert.equal(await scalar('select payment_status from orders where id=$1',[historicalOrder]),'confirmed')
   assert.equal(await scalar("select count(*)::int from wallet_transactions where reference_type='payment' and reference_id=$1",[historicalPayment]),1)
   check('delivered orders accept idempotent payment confirmation while final-status guards remain', () => {})
+  await asUser(founder, async () => {
+    const summary = await scalar("select ai_business_summary('2000-01-01','2000-01-02')")
+    assert.equal(Number(summary.currentWalletBalance),Number(await scalar('select wallet_balance()')))
+    assert.equal(Number(summary.netWalletMovement),0)
+    assert.equal(Number(summary.deliveredPaidOrdersAllTime),1)
+    assert.equal(Number(summary.deliveredPaidOrdersInPeriod),0)
+  })
+  check('AI summary distinguishes current balance, period movement, and delivered paid counts', () => {})
   const balance = Number(await scalar('select sum(amount) from wallet_transactions'))
   let expenseId, withdrawalId
   await asUser(founder, async () => {
