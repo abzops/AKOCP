@@ -59,4 +59,22 @@ describe('dashboard reporting',()=>{
     expect(data.services.find(s=>s.name==='AU150')?.value).toBe(100)
     expect(data.services.find(s=>s.name==='Recorded sales')?.value).toBe(150)
   })
+  it('updates indexed reports after a refresh without changing previous snapshots',()=>{
+    const original=snapshot()
+    const before=periodTotals(original,'2026-10-23','2026-10-23')
+    const refreshed={...original,walletTransactions:[...original.walletTransactions,tx('new-receipt','payment',75,'2026-10-23T12:00:00Z')],orders:original.orders.map(o=>o.id==='new'?{...o,status:'delivered' as const,delivered_at:'2026-10-23T12:00:00Z'}:o)}
+    expect(periodTotals(refreshed,'2026-10-23','2026-10-23')).toMatchObject({revenue:375,delivered:2})
+    expect(periodTotals(original,'2026-10-23','2026-10-23')).toEqual(before)
+    before.transactions.length=0
+    before.orderRows.length=0
+    expect(periodTotals(original,'2026-10-23','2026-10-23').transactions).toHaveLength(6)
+    expect(periodTotals(original,'2026-10-23','2026-10-23').orderRows).toHaveLength(2)
+  })
+  it('excludes deleted activity and retains net expense reversals across grouped reports',()=>{
+    const source=snapshot()
+    const data={...source,orders:source.orders.map(o=>({...o,deleted_at:'2026-10-23T12:00:00Z'})),customers:source.customers.map(c=>({...c,deleted_at:'2026-10-23T12:00:00Z'})),walletTransactions:[...source.walletTransactions,tx('reversal','expense',10,'2026-10-23T12:00:00Z')]}
+    const report=dashboardData(data,'all','2026-10-23','day',new Date('2026-10-23T12:00:00Z'))
+    expect(report.totals).toMatchObject({orders:0,completed:0,delivered:0,newCustomers:0,expenses:30,revenue:320})
+    expect(report.breakdown.reduce((n,row)=>n+row.profit,0)).toBe(290)
+  })
 })
