@@ -31,6 +31,8 @@ describe('dashboard reporting',()=>{
   it('keeps current wallet and current overdue work independent of historical report dates',()=>{
     const data=dashboardData(snapshot(),'day','2026-09-02','day',new Date('2026-10-23T10:00:00Z'))
     expect(data.totals.revenue).toBe(0)
+    expect(Object.is(data.totals.expenses,-0)).toBe(false)
+    expect(Object.is(data.totals.withdrawals,-0)).toBe(false)
     expect(data.wallet).toBe(1230)
     expect(data.overdue.map(o=>o.id)).toEqual(['new'])
     expect(data.outstandingAmount).toBe(350)

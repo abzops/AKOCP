@@ -31,8 +31,8 @@ export function periodTotals(snapshot:AppSnapshot,from:string,to:string) {
   const inside=(value?:string|null)=>Boolean(value&&businessDate(value)>=from&&businessDate(value)<=to)
   const transactions=snapshot.walletTransactions.filter(t=>inside(t.created_at))
   const revenue=sum(transactions.filter(t=>revenueTypes.has(t.type)),t=>t.amount)
-  const expenses=-sum(transactions.filter(t=>t.type==='expense'),t=>t.amount)
-  const withdrawals=-sum(transactions.filter(t=>t.type==='withdrawal'),t=>t.amount)
+  const expenses=-sum(transactions.filter(t=>t.type==='expense'),t=>t.amount)||0
+  const withdrawals=-sum(transactions.filter(t=>t.type==='withdrawal'),t=>t.amount)||0
   const adjustments=sum(transactions.filter(t=>t.type==='adjustment'),t=>t.amount)
   const orders=snapshot.orders.filter(o=>!o.deleted_at&&inside(o.created_at))
   const completed=snapshot.orders.filter(o=>!o.deleted_at&&inside(o.completed_at))
