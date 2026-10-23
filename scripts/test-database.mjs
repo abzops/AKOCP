@@ -171,6 +171,25 @@ try {
   await asUser(pending,async()=>assert.rejects(()=>db.query("select create_order_with_source('Blocked','9999999986',null,null,(select id from services where code='AU150'),null,'Blocked','Malayalam',null,null,null,null,null,'referral')"),/Active workspace/))
   assert.equal(await scalar("select has_function_privilege('anon','public.create_order_with_source(text,text,text,text,uuid,uuid,text,text,date,uuid,text,text,integer,text)','execute')"),false)
   check('source creation is atomic; delivery fields validate URLs; old financial rows remain unchanged and inactive/anon access is blocked',()=>{})
+  await asUser(operations,async()=>{
+    const catalog=await scalar("select price from services where code='AU150'")
+    const cash=await scalar('select sum(amount) from wallet_transactions')
+    const call="select create_order_priced('Custom Price','9999999970',null,null,(select id from services where code='AU150'),null,'Custom track','Malayalam',null,null,null,'Kochi',32,'referral',$1)"
+    const custom=await scalar(call,[275.5])
+    assert.equal(Number(await scalar('select price from orders where id=$1',[custom])),275.5)
+    assert.equal(await scalar('select acquisition_source from orders where id=$1',[custom]),'referral')
+    const standard=await scalar(call,[null])
+    assert.equal(Number(await scalar('select price from orders where id=$1',[standard])),Number(catalog))
+    assert.equal(await scalar("select price from services where code='AU150'"),catalog)
+    const count=await scalar('select count(*)::int from orders')
+    for(const invalid of [0,-1,1.234,'NaN']) await assert.rejects(()=>db.query(call,[invalid]),/Custom price/)
+    assert.equal(await scalar('select count(*)::int from orders'),count)
+    await assert.rejects(()=>db.query('update orders set price=1 where id=$1',[custom]),/immutable|cannot|price/i)
+    assert.equal(await scalar('select sum(amount) from wallet_transactions'),cash)
+  })
+  await asUser(pending,async()=>assert.rejects(()=>db.query("select create_order_priced('Blocked','9999999971',null,null,(select id from services where code='AU150'),null,'Blocked','Malayalam',null,null,null,null,null,null,100)"),/Active workspace/))
+  assert.equal(await scalar("select has_function_privilege('anon','public.create_order_priced(text,text,text,text,uuid,uuid,text,text,date,uuid,text,text,integer,text,numeric)','execute')"),false)
+  check('optional custom price preserves catalog and existing prices, validates amounts, and requires active access',()=>{})
   let instalmentOrder,firstReceipt,secondReceipt
   await asUser(operations,async()=>{
     instalmentOrder=await scalar("select create_order_with_source('Instalments','9999999985',null,null,(select id from services where code='AU150'),null,'Instalment track','Malayalam',null,null,null,null,null,'referral')")

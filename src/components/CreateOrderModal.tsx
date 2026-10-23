@@ -9,7 +9,7 @@ import type { CreateOrderInput, Customer, InventoryTrack } from '../types'
 import { Badge, Button, Input, Modal, Select, Textarea, cn } from './ui'
 
 const languages = ['Malayalam', 'Tamil', 'Hindi', 'English', 'Kannada', 'Telugu', 'Other']
-const emptyForm: CreateOrderInput = { customerName: '', phone: '', trackName: '', serviceId: '', language: 'Malayalam', place: '', age: '' }
+const emptyForm: CreateOrderInput = { customerName: '', phone: '', trackName: '', serviceId: '', language: 'Malayalam', place: '', age: '',customPrice:'' }
 
 export function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): void }) {
   const { profile } = useAuth()
@@ -25,6 +25,7 @@ export function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): 
   const busy = busyAction === 'create-order'
   const defaultService = snapshot?.services.find(s => s.active && s.code === 'ML350')
   const selectedService = snapshot?.services.find(s => s.id === (form.serviceId || defaultService?.id))
+  const orderPrice=form.customPrice?.trim()&&Number.isFinite(Number(form.customPrice))?Number(form.customPrice):selectedService?.price??0
 
   useEffect(() => {
     if (!open || selectedTrack || form.trackName.trim().length < 2) {
@@ -72,6 +73,10 @@ export function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (busy || !selectedService) return
+    if(form.customPrice?.trim()){
+      const amount=Number(form.customPrice)
+      if(!Number.isFinite(amount)||amount<=0||amount>9999999999.99||Math.abs(amount*100-Math.round(amount*100))>0.0001){setFormError('Enter a custom price greater than zero, with at most two decimal places.');return}
+    }
     const chosenCustomer = customerMatches.find(c => c.id === customerId) ?? (customerMatches.length === 1 ? customerMatches[0] : null)
     if (customerMatches.length > 1 && !chosenCustomer) { setFormError('Choose the returning customer above. More than one customer uses this phone.'); return }
     if (chosenCustomer && chosenCustomer.name.trim().toLocaleLowerCase() !== form.customerName.trim().toLocaleLowerCase()) { setFormError(`Use ${chosenCustomer.name} above to keep this phone linked to the existing customer. You can change their name in Customers.`); return }
@@ -87,7 +92,7 @@ export function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): 
   const videoCode = form.language === 'Malayalam' ? 'ML350' : 'OL450'
   const audio = snapshot.services.find(s => s.active && s.code === 'AU150')
   const video = snapshot.services.find(s => s.active && s.code === videoCode)
-  return <Modal open={open} onClose={close} title="New order" description="Add the customer, choose a song, and save." size="lg" footer={<><Button variant="ghost" disabled={busy} onClick={close}>Cancel</Button><Button form="create-order-form" type="submit" disabled={!selectedService} loading={busy}>Create order · {formatCurrency(selectedService?.price ?? 0)}</Button></>}>
+  return <Modal open={open} onClose={close} title="New order" description="Add the customer, choose a song, and save." size="lg" footer={<><Button variant="ghost" disabled={busy} onClick={close}>Cancel</Button><Button form="create-order-form" type="submit" disabled={!selectedService} loading={busy}>Create order · {formatCurrency(orderPrice)}</Button></>}>
     <form id="create-order-form" className="form-stack quick-order-form" onSubmit={submit}>
       {formError && <div className="form-alert error" role="alert">{formError}</div>}
       <div className="form-grid two">
@@ -105,6 +110,7 @@ export function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): 
       </div>
       {!selectedTrack && <><fieldset className="quick-service-picker"><legend>What does the customer need?</legend><div>{audio && <button type="button" className={cn('quick-service', selectedService?.code === 'AU150' && 'selected')} aria-pressed={selectedService?.code === 'AU150'} onClick={() => chooseService('AU150')}><strong>Audio karaoke</strong><span>{formatCurrency(audio.price)}</span></button>}{video && <button type="button" className={cn('quick-service', selectedService?.code === videoCode && 'selected')} aria-pressed={selectedService?.code === videoCode} onClick={() => chooseService(videoCode)}><strong>Custom video</strong><span>{formatCurrency(video.price)}</span></button>}</div></fieldset>
         <Select label="Song language" value={form.language} onChange={event => { const language=event.target.value; const code=language === 'Malayalam' ? 'ML350' : 'OL450'; setForm(current => ({ ...current, language, serviceId:selectedService?.code === 'AU150' ? current.serviceId : snapshot.services.find(s => s.active && s.code === code)?.id ?? '' })) }}>{languages.map(language => <option key={language}>{language}</option>)}</Select></>}
+      <Input label="Custom price (optional)" type="number" inputMode="decimal" min="0.01" max="9999999999.99" step="0.01" value={form.customPrice??''} onChange={event=>update('customPrice',event.target.value)} placeholder={String(selectedService?.price??'')} hint={`Leave blank to use the service price (${formatCurrency(selectedService?.price??0)}). Applies only to this order.`}/>
       <details className="quick-order-extras" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}><summary>Optional details <span>Place, age, due date & notes</span></summary><div className="form-stack">
         <div className="form-grid two"><Input label="Place (optional)" autoComplete="address-level2" maxLength={120} value={form.place ?? ''} placeholder="Town or city" onChange={event => update('place',event.target.value)} /><Input label="Age (optional)" type="number" min={0} max={120} step={1} value={form.age ?? ''} placeholder="Years" onChange={event => update('age',event.target.value)} /></div>
         <div className="form-grid two"><Input label="Due date (optional)" type="date" value={form.dueDate ?? ''} onChange={event => update('dueDate',event.target.value)} /><Input label="WhatsApp (optional)" type="tel" value={form.whatsapp ?? ''} placeholder="Same as phone" onChange={event => update('whatsapp',event.target.value)} /></div>

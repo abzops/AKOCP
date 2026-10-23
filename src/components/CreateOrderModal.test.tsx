@@ -29,6 +29,29 @@ const fillBasic=()=>{
 const submit=()=>fireEvent.submit(screen.getByLabelText(/^Song title/).closest('form')!)
 
 describe('quick order entry',()=>{
+  it('uses an optional custom price for this order and returns to the service price when cleared',async()=>{
+    render(<CreateOrderModal open onClose={vi.fn()} />)
+    fillBasic()
+    const price=screen.getByLabelText(/^Custom price/)
+    expect(price).not.toBeRequired()
+    fireEvent.change(price,{target:{value:'275.50'}})
+    expect(screen.getByRole('button',{name:/Create order/})).toHaveTextContent('₹275.5')
+    fireEvent.change(price,{target:{value:''}})
+    expect(screen.getByRole('button',{name:/Create order/})).toHaveTextContent('₹350')
+    fireEvent.change(price,{target:{value:'275.50'}})
+    submit()
+    await waitFor(()=>expect(state.service.createOrder).toHaveBeenCalled())
+    expect(state.service.createOrder.mock.calls[0][0]).toMatchObject({customPrice:'275.50'})
+    expect(state.snapshot.services.find(service=>service.code==='ML350')?.price).toBe(350)
+  })
+  it.each(['0','-1','12.345'])('rejects invalid custom price %s before saving',async(value)=>{
+    render(<CreateOrderModal open onClose={vi.fn()} />)
+    fillBasic()
+    fireEvent.change(screen.getByLabelText(/^Custom price/),{target:{value}})
+    submit()
+    expect(state.service.createOrder).not.toHaveBeenCalled()
+    expect(screen.getByText(/Enter a custom price greater than zero/)).toBeVisible()
+  })
   it('creates an order with one song entry and no optional details, preserving international phone numbers',async()=>{
     const close=vi.fn()
     render(<CreateOrderModal open onClose={close} />)
@@ -75,3 +98,4 @@ describe('quick order entry',()=>{
     expect(screen.getByLabelText(/^Song title/)).toHaveValue('New song')
   })
 })
+

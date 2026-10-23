@@ -432,6 +432,7 @@ export interface CreateOrderInput {
   assignedTo?: string
   notes?: string
   acquisitionSource?: string
+  customPrice?: string
 }
 
 export interface CreateTrackInput {

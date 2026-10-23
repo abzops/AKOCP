@@ -259,7 +259,7 @@ export const supabaseDataService: DataService = {
   },
 
   async createOrder(input: CreateOrderInput, actor: Profile) {
-    const { error } = await supabase.rpc('create_order_with_source', {
+    const { error } = await supabase.rpc('create_order_priced', {
       p_customer_name: input.customerName,
       p_phone: input.phone,
       p_whatsapp: input.whatsapp || null,
@@ -273,7 +273,8 @@ export const supabaseDataService: DataService = {
       p_notes: input.notes || null,
       p_place: input.place?.trim() || null,
       p_age: input.age?.trim() ? Number(input.age) : null,
-      p_source: input.acquisitionSource || null
+      p_source: input.acquisitionSource || null,
+      p_custom_price: input.customPrice?.trim() ? Number(input.customPrice) : null
     })
     assertNoError(error)
   },
