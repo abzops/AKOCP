@@ -6,14 +6,10 @@ import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
 import { aiService } from '../lib/ai-service'
 import { downloadCsv, formatCurrency, formatDate, fromNow, normalizeSearch, paymentStatusLabels, statusLabels } from '../lib/format'
-import type { CreateOrderInput, InventoryTrack, Order, OrderDeletionPreview, OrderStatus } from '../types'
+import { CreateOrderModal } from '../components/CreateOrderModal'
+import type { Order, OrderDeletionPreview, OrderStatus } from '../types'
 
-const languages = ['Malayalam', 'Tamil', 'Hindi', 'English', 'Kannada', 'Telugu', 'Other']
 const statuses: Array<'all' | OrderStatus> = ['all', 'inquiry', 'payment_pending', 'in_progress', 'completed', 'delivered', 'cancelled']
-
-const emptyOrderForm: CreateOrderInput = {
-  customerName: '', phone: '', whatsapp: '', customerNotes: '', serviceId: '', inventoryTrackId: '', trackName: '', language: 'Malayalam', dueDate: '', assignedTo: '', notes: ''
-}
 
 export function OrdersPage() {
   const { profile } = useAuth()
@@ -181,84 +177,15 @@ export function OrdersPage() {
   )
 }
 
-function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): void }) {
-  const { profile } = useAuth()
-  const { snapshot, service, execute, busyAction } = useAppData()
-  const [form, setForm] = useState<CreateOrderInput>(emptyOrderForm)
-  const [trackSearch, setTrackSearch] = useState('')
-  const [selectedTrack, setSelectedTrack] = useState<InventoryTrack | null>(null)
-  const [matches, setMatches] = useState<InventoryTrack[]>([])
-  useEffect(() => {
-    if (!open || selectedTrack || trackSearch.trim().length < 2) {
-      setMatches([])
-      return
-    }
-    let active = true
-    const timer = window.setTimeout(() => {
-      service.searchInventory({ query: trackSearch, sort: 'orders', limit: 6 }).then((result) => {
-        if (active) setMatches(result.items)
-      }).catch(() => {
-        if (active) setMatches([])
-      })
-    }, 250)
-    return () => { active = false; window.clearTimeout(timer) }
-  }, [open, selectedTrack, service, trackSearch])
-  if (!snapshot || !profile) return null
-  const update = (key: keyof CreateOrderInput, value: string) => setForm((current) => ({ ...current, [key]: value }))
-  const existingService = snapshot.services.find((item) => item.code === 'EX250')
-  const customerMatch = snapshot.customers.find((customer) => customer.phone === form.phone.replace(/\D/g, '').slice(-10))
-  const chooseTrack = (track: InventoryTrack) => {
-    setSelectedTrack(track)
-    setTrackSearch(track.track_name)
-    setForm((current) => ({ ...current, inventoryTrackId: track.id, trackName: track.track_name, language: track.language, serviceId: existingService?.id ?? current.serviceId }))
-  }
-  const clearTrack = () => {
-    setSelectedTrack(null)
-    setTrackSearch('')
-    setForm((current) => ({ ...current, inventoryTrackId: '', trackName: '', serviceId: '' }))
-  }
-  const applyCustomer = () => {
-    if (!customerMatch) return
-    setForm((current) => ({ ...current, customerName: customerMatch.name, whatsapp: customerMatch.whatsapp ?? '', customerNotes: customerMatch.notes ?? '' }))
-  }
-  const close = () => { setForm(emptyOrderForm); setTrackSearch(''); setSelectedTrack(null); onClose() }
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    const submitted = { ...form, phone: form.phone.replace(/\D/g, '').slice(-10), whatsapp: form.whatsapp?.replace(/\D/g, '').slice(-10) }
-    await execute('create-order', 'Order created successfully', () => service.createOrder(submitted, profile))
-    close()
-  }
-  const chosenService = snapshot.services.find((item) => item.id === form.serviceId)
-  return (
-    <Modal open={open} onClose={close} title="Create customer order" description="Start by checking whether this karaoke already exists." size="xl" footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button form="create-order-form" type="submit" loading={busyAction === 'create-order'}>Create order · {formatCurrency(chosenService?.price ?? 0)}</Button></>}>
-      <form id="create-order-form" onSubmit={submit} className="form-stack">
-        <section className="form-section inventory-first"><div className="form-section-heading"><span>1</span><div><h3>Search karaoke inventory</h3><p>Avoid creating a track that the business already owns.</p></div></div>
-          <div className="inventory-picker"><div className="inventory-search-input"><Search size={18} /><input value={trackSearch} onChange={(event) => { const value = event.target.value; setTrackSearch(value); if (selectedTrack) { setSelectedTrack(null); setForm((current) => ({ ...current, inventoryTrackId: '', trackName: '', serviceId: '' })) } }} placeholder="Malayalam, English or Manglish title…" />{selectedTrack && <button type="button" onClick={clearTrack}><XCircle size={18} /></button>}</div>
-            {selectedTrack ? <div className="selected-track"><span><Music2 size={20} /></span><div><strong>{selectedTrack.track_name}</strong><small>{selectedTrack.malayalam_title || selectedTrack.english_title} · {selectedTrack.language}</small></div><Badge tone="green">Existing asset</Badge></div>
-              : matches.length > 0 ? <div className="inventory-results">{matches.map((track) => <button type="button" key={track.id} onClick={() => chooseTrack(track)}><span><Music2 size={17} /></span><div><strong>{track.track_name}</strong><small>{track.malayalam_title || track.english_title} · {track.total_orders} orders · {formatCurrency(track.lifetime_revenue)}</small></div><b>Use track</b></button>)}</div>
-                : trackSearch.trim().length >= 2 && <div className="no-track-match"><span>No matching asset found.</span><small>Continue below to create a custom karaoke order.</small></div>}
-          </div>
-        </section>
-        <section className="form-section"><div className="form-section-heading"><span>2</span><div><h3>Customer & track</h3><p>Capture contact and delivery information.</p></div></div>
-          <div className="form-grid three"><div className="phone-field"><Input label="Phone number" value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="10-digit number" inputMode="numeric" pattern="[0-9 +()-]{10,}" required />{customerMatch && <button type="button" onClick={applyCustomer}>Use {customerMatch.name}</button>}</div><Input label="Customer name" value={form.customerName} onChange={(event) => update('customerName', event.target.value)} placeholder="Full name" required /><Input label="WhatsApp" value={form.whatsapp} onChange={(event) => update('whatsapp', event.target.value)} placeholder="Defaults to phone" inputMode="numeric" /></div>
-          <div className="form-grid three"><Input label="Track name" value={form.trackName} onChange={(event) => update('trackName', event.target.value)} placeholder="Song title" required disabled={Boolean(selectedTrack)} /><Select label="Language" value={form.language} onChange={(event) => update('language', event.target.value)} required disabled={Boolean(selectedTrack)}>{languages.map((language) => <option key={language}>{language}</option>)}</Select><Input label="Due date" type="date" value={form.dueDate} min={new Date().toISOString().slice(0, 10)} onChange={(event) => update('dueDate', event.target.value)} /></div>
-        </section>
-        <section className="form-section"><div className="form-section-heading"><span>3</span><div><h3>Service & ownership</h3><p>The price is controlled by the selected service.</p></div></div>
-          <div className="form-grid two"><Select label="Service" value={form.serviceId} onChange={(event) => update('serviceId', event.target.value)} required><option value="">Choose service</option>{snapshot.services.filter((item) => item.active && (selectedTrack || item.code !== 'EX250')).map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name} · {formatCurrency(item.price)}</option>)}</Select><Select label="Assign to" value={form.assignedTo} onChange={(event) => update('assignedTo', event.target.value)}><option value="">Assign to me</option>{snapshot.profiles.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.full_name} · {item.role}</option>)}</Select></div>
-          <Textarea label="Order notes" value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Customer request, timing, key or production notes…" rows={3} />
-        </section>
-      </form>
-    </Modal>
-  )
-}
-
 function OrderDetailsModal({ order, onClose, onUpload, onConfirm, onComplete, onDeliver, onProgress, onCancel, onDelete, canConfirm, canDelete, loading }: { order: Order | null; onClose(): void; onUpload(): void; onConfirm(): void; onComplete(): void; onDeliver(): void; onProgress(): void; onCancel(): void; onDelete(): void; canConfirm: boolean; canDelete: boolean; loading: boolean }) {
+  const { snapshot } = useAppData()
+  const customer = snapshot?.customers.find(item => item.id === order?.customer_id)
   if (!order) return null
   return (
     <Modal open={Boolean(order)} onClose={onClose} title={order.order_number} description={`${order.track_name} · ${order.language}`} size="lg">
       <div className="order-detail-hero"><div><span className="service-code large">{order.service?.code}</span><div><strong>{order.service?.name}</strong><small>Created {formatDate(order.created_at, 'long')}</small></div></div><strong>{formatCurrency(order.price)}</strong></div>
       <div className="detail-status-row"><div><span>Order status</span><StatusBadge status={order.status} /></div><div><span>Payment</span><StatusBadge status={order.payment_status} /></div></div>
-      <div className="detail-grid"><div><UserRound size={17} /><span><small>Customer</small><strong>{order.customer?.name}</strong><a href={`tel:${order.customer?.phone}`}>{order.customer?.phone}</a></span></div><div><CalendarDays size={17} /><span><small>Due date</small><strong>{formatDate(order.due_date)}</strong><em>{order.assignee?.full_name ? `Assigned to ${order.assignee.full_name}` : 'Unassigned'}</em></span></div><div><Music2 size={17} /><span><small>Inventory</small><strong>{order.inventory_track_id ? 'Existing track' : 'New creation'}</strong><em>{order.track_name}</em></span></div><div><MessageCircle size={17} /><span><small>Notes</small><strong>{order.notes || 'No notes added'}</strong></span></div></div>
+      <div className="detail-grid"><div><UserRound size={17} /><span><small>Customer</small><strong>{order.customer?.name}</strong><a href={`tel:${order.customer?.phone}`}>{order.customer?.phone}</a>{(customer?.place || customer?.age != null) && <em>{[customer?.place, customer?.age != null ? `${customer.age} years old` : null].filter(Boolean).join(" · ")}</em>}</span></div><div><CalendarDays size={17} /><span><small>Due date</small><strong>{formatDate(order.due_date)}</strong><em>{order.assignee?.full_name ? `Assigned to ${order.assignee.full_name}` : 'Unassigned'}</em></span></div><div><Music2 size={17} /><span><small>Inventory</small><strong>{order.inventory_track_id ? 'Existing track' : 'New creation'}</strong><em>{order.track_name}</em></span></div><div><MessageCircle size={17} /><span><small>Notes</small><strong>{order.notes || 'No notes added'}</strong></span></div></div>
       <div className="detail-actions">
         {order.payment_status === 'unpaid' && order.status !== 'cancelled' && <Button icon={<FileImage size={16} />} onClick={onUpload}>Upload payment proof</Button>}
         {order.payment_status === 'proof_uploaded' && canConfirm && <Button icon={<CircleDollarSign size={16} />} loading={loading} onClick={onConfirm}>Confirm payment</Button>}

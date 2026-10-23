@@ -56,6 +56,8 @@ export interface Customer {
   phone: string
   whatsapp?: string | null
   notes?: string | null
+  place?: string | null
+  age?: number | null
   total_orders: number
   lifetime_revenue: number
   last_ordered_at?: string | null
@@ -414,6 +416,8 @@ export interface CreateOrderInput {
   phone: string
   whatsapp?: string
   customerNotes?: string
+  place?: string
+  age?: string
   serviceId: string
   inventoryTrackId?: string
   trackName: string
@@ -449,7 +453,7 @@ export interface DataService {
   confirmPayment(paymentId: string, actor: Profile): Promise<void>
   completeOrder(orderId: string, addToInventory: boolean, trackInput: CreateTrackInput | null, actor: Profile): Promise<void>
   createTrack(input: CreateTrackInput, actor: Profile): Promise<void>
-  updateCustomer(id: string, input: Pick<Customer, 'name' | 'whatsapp' | 'notes'>, actor: Profile): Promise<void>
+  updateCustomer(id: string, input: Pick<Customer, 'name' | 'whatsapp' | 'notes' | 'place' | 'age'>, actor: Profile): Promise<void>
   createExpense(input: { amount: number; category: ExpenseCategory; description: string; expenseDate: string; file: File | null }, actor: Profile): Promise<void>
   requestWithdrawal(input: { amount: number; reason: WithdrawalReason; notes?: string }, actor: Profile): Promise<void>
   reviewWithdrawal(id: string, decision: 'approved' | 'rejected', actor: Profile): Promise<void>

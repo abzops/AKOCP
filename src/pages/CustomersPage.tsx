@@ -13,12 +13,12 @@ export function CustomersPage() {
   const [selected, setSelected] = useState<Customer | null>(null)
   const navigate = useNavigate()
   if (!snapshot) return null
-  const filtered = snapshot.customers.filter((customer) => normalizeSearch(`${customer.name} ${customer.phone} ${customer.whatsapp} ${customer.notes}`).includes(normalizeSearch(query)))
+  const filtered = snapshot.customers.filter((customer) => normalizeSearch(`${customer.name} ${customer.phone} ${customer.whatsapp} ${customer.place ?? ''} ${customer.notes}`).includes(normalizeSearch(query)))
   const ranked = [...snapshot.customers].sort((a, b) => b.lifetime_revenue - a.lifetime_revenue)
   const top = ranked[0]
   const repeatCustomers = snapshot.customers.filter((customer) => customer.total_orders > 1).length
   const averageValue = snapshot.customers.length ? snapshot.customers.reduce((sum, customer) => sum + customer.lifetime_revenue, 0) / snapshot.customers.length : 0
-  const exportCustomers = () => downloadCsv(`AKOCP-customers-${new Date().toISOString().slice(0, 10)}.csv`, filtered.map((customer) => ({ Name: customer.name, Phone: customer.phone, WhatsApp: customer.whatsapp, Orders: customer.total_orders, 'Lifetime Revenue': customer.lifetime_revenue, 'Last Ordered': customer.last_ordered_at, Notes: customer.notes })))
+  const exportCustomers = () => downloadCsv(`AKOCP-customers-${new Date().toISOString().slice(0, 10)}.csv`, filtered.map((customer) => ({ Name: customer.name, Phone: customer.phone, WhatsApp: customer.whatsapp, Place: customer.place, Age: customer.age, Orders: customer.total_orders, 'Lifetime Revenue': customer.lifetime_revenue, 'Last Ordered': customer.last_ordered_at, Notes: customer.notes })))
   return (
     <div className="page-stack customers-page">
       <PageHeader eyebrow="Relationship value" title="Customers" description="See repeat business, lifetime value, contact details, and complete order history." action={<div className="button-row"><Button variant="secondary" icon={<Download size={16} />} onClick={exportCustomers}>Export CSV</Button><Button icon={<UserPlus size={17} />} onClick={() => navigate('/orders?new=1')}>New customer order</Button></div>} />
@@ -44,6 +44,8 @@ function CustomerModal({ customer, onClose }: { customer: Customer | null; onClo
   const [name, setName] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
   const [notes, setNotes] = useState('')
+  const [place, setPlace] = useState('')
+  const [age, setAge] = useState('')
   const [purgeOpen, setPurgeOpen] = useState(false)
   const [preview, setPreview] = useState<CustomerPurgePreview | null>(null)
   const [confirmationName, setConfirmationName] = useState('')
@@ -60,12 +62,11 @@ function CustomerModal({ customer, onClose }: { customer: Customer | null; onClo
   }, [customer?.id])
 
   if (!customer || !profile) return null
-  const startEdit = () => { setName(customer.name); setWhatsapp(customer.whatsapp ?? ''); setNotes(customer.notes ?? ''); setEditing(true) }
+  const startEdit = () => { setName(customer.name); setWhatsapp(customer.whatsapp ?? ''); setNotes(customer.notes ?? ''); setPlace(customer.place ?? ''); setAge(customer.age == null ? '' : String(customer.age)); setEditing(true) }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    await execute(`customer-${customer.id}`, 'Customer updated', () => service.updateCustomer(customer.id, { name, whatsapp, notes }, profile), ['customers', 'orders'])
-    setEditing(false)
-    onClose()
+    const saved = await execute(`customer-${customer.id}`, 'Customer updated', async () => { await service.updateCustomer(customer.id, { name, whatsapp, notes, place, age: age === '' ? null : Number(age) }, profile); return true }, ['customers', 'orders'])
+    if (saved) { setEditing(false); onClose() }
   }
   const openPurge = async () => {
     setPurgeOpen(true)
@@ -101,8 +102,8 @@ function CustomerModal({ customer, onClose }: { customer: Customer | null; onClo
   return (
     <>
       <Modal open={Boolean(customer) && !purgeOpen} onClose={onClose} title={customer.name} description={`Customer since ${formatDate(customer.created_at)}`} size="lg" footer={footer}>
-        {editing ? <form id="customer-edit-form" onSubmit={submit} className="form-stack"><Input label="Customer name" value={name} onChange={(event) => setName(event.target.value)} required /><Input label="WhatsApp number" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} inputMode="numeric" /><Textarea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="Preferences, context or follow-up notes…" /></form>
-          : <><div className="customer-modal-hero"><span className="avatar xl">{initials(customer.name)}</span><div><a href={`tel:${customer.phone}`}><Phone size={16} />{customer.phone}</a><a href={`https://wa.me/${customer.whatsapp || customer.phone}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />Open WhatsApp</a></div><div><span>Lifetime value</span><strong>{formatCurrency(customer.lifetime_revenue)}</strong><small>{customer.total_orders} total orders</small></div></div>{customer.notes && <div className="customer-notes"><span>Customer notes</span><p>{customer.notes}</p></div>}<div className="modal-section-heading"><h3>Order history</h3><Badge>{orders.length} orders</Badge></div><div className="history-list">{orders.map((order) => <div key={order.id}><span className="service-code">{order.service?.code}</span><div><strong>{order.track_name}</strong><small>{order.order_number} · {formatDate(order.created_at)}</small></div><b>{formatCurrency(order.price)}</b></div>)}</div></>}
+        {editing ? <form id="customer-edit-form" onSubmit={submit} className="form-stack"><Input label="Customer name" value={name} onChange={(event) => setName(event.target.value)} required /><Input label="WhatsApp number" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} inputMode="numeric" /><div className="form-grid two"><Input label="Place (optional)" value={place} maxLength={120} onChange={(event) => setPlace(event.target.value)} placeholder="Town or city" /><Input label="Age (optional)" type="number" min={0} max={120} step={1} value={age} onChange={(event) => setAge(event.target.value)} placeholder="Years" /></div><Textarea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="Preferences, context or follow-up notes…" /></form>
+          : <><div className="customer-modal-hero"><span className="avatar xl">{initials(customer.name)}</span><div><a href={`tel:${customer.phone}`}><Phone size={16} />{customer.phone}</a><a href={`https://wa.me/${customer.whatsapp || customer.phone}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />Open WhatsApp</a></div><div><span>Lifetime value</span><strong>{formatCurrency(customer.lifetime_revenue)}</strong><small>{customer.total_orders} total orders</small></div></div>{(customer.place || customer.age != null) && <div className="customer-notes"><span>Customer details</span><p>{[customer.place, customer.age != null ? `${customer.age} years old` : null].filter(Boolean).join(" · ")}</p></div>}{customer.notes && <div className="customer-notes"><span>Customer notes</span><p>{customer.notes}</p></div>}<div className="modal-section-heading"><h3>Order history</h3><Badge>{orders.length} orders</Badge></div><div className="history-list">{orders.map((order) => <div key={order.id}><span className="service-code">{order.service?.code}</span><div><strong>{order.track_name}</strong><small>{order.order_number} · {formatDate(order.created_at)}</small></div><b>{formatCurrency(order.price)}</b></div>)}</div></>}
       </Modal>
       <Modal open={purgeOpen} onClose={() => !purgeLoading && setPurgeOpen(false)} title="Permanently delete customer?" description="Founder-only privacy purge" size="md" footer={<><Button variant="ghost" disabled={purgeLoading} onClick={() => setPurgeOpen(false)}>Cancel</Button><Button variant="danger" icon={<Trash2 size={16} />} loading={purgeLoading} disabled={!preview || confirmationName !== customer.name} onClick={() => void confirmPurge()}>Permanently delete</Button></>}>
         <div className="privacy-purge-warning"><span><AlertTriangle size={22} /></span><div><strong>This cannot be undone</strong><p>Customer identity and operational history will be removed. Anonymous wallet totals and reusable inventory assets will remain.</p></div></div>

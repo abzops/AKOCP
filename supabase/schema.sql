@@ -37,6 +37,8 @@ create table if not exists public.customers (
   total_orders integer not null default 0 check (total_orders >= 0),
   lifetime_revenue numeric(14,2) not null default 0 check (lifetime_revenue >= 0),
   notes text,
+  place text check(place is null or char_length(place)<=120),
+  age smallint check(age is null or age between 0 and 120),
   last_ordered_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

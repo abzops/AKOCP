@@ -259,7 +259,7 @@ export const supabaseDataService: DataService = {
   },
 
   async createOrder(input: CreateOrderInput, actor: Profile) {
-    const { error } = await supabase.rpc('create_order', {
+    const { error } = await supabase.rpc('create_order_with_customer_details', {
       p_customer_name: input.customerName,
       p_phone: input.phone,
       p_whatsapp: input.whatsapp || null,
@@ -270,7 +270,9 @@ export const supabaseDataService: DataService = {
       p_language: input.language,
       p_due_date: input.dueDate || null,
       p_assigned_to: input.assignedTo || actor.id,
-      p_notes: input.notes || null
+      p_notes: input.notes || null,
+      p_place: input.place?.trim() || null,
+      p_age: input.age?.trim() ? Number(input.age) : null
     })
     assertNoError(error)
   },
@@ -329,6 +331,8 @@ export const supabaseDataService: DataService = {
       name: input.name,
       whatsapp: input.whatsapp || null,
       notes: input.notes || null,
+      ...(input.place !== undefined ? { place: input.place?.trim() || null } : {}),
+      ...(input.age !== undefined ? { age: input.age } : {}),
       updated_at: new Date().toISOString()
     }).eq('id', id)
     assertNoError(error)

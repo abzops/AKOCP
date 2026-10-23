@@ -138,6 +138,24 @@ try {
     }
   })
   check('Malayalam-only title is found through English and spelling aliases without replacing original metadata', () => {})
+  await asUser(operations, async () => {
+    const call = "select create_order_with_customer_details('Optional Details','9999999997',null,null,(select id from services where code='AU150'),null,'Quick order track','Malayalam',null,null,null,$1,$2)"
+    await db.query(call,['Kochi',32])
+    let customer=(await db.query("select place,age,total_orders from customers where phone='9999999997'")).rows[0]
+    assert.deepEqual(customer,{place:'Kochi',age:32,total_orders:1})
+    await db.query(call,[null,null])
+    customer=(await db.query("select place,age,total_orders from customers where phone='9999999997'")).rows[0]
+    assert.deepEqual(customer,{place:'Kochi',age:32,total_orders:2})
+    await assert.rejects(()=>db.query(call,['Kochi',121]), /Age must be/)
+    await assert.rejects(()=>db.query(call,['x'.repeat(121),25]), /Place must be/)
+    assert.equal(await scalar("select total_orders from customers where phone='9999999997'"),2)
+    await db.query(call,['Kochi',0])
+    assert.equal(await scalar("select age from customers where phone='9999999997'"),0)
+  })
+  await asUser(pending, async () => {
+    await assert.rejects(()=>db.query("select create_order_with_customer_details('Blocked','9999999996',null,null,(select id from services where code='AU150'),null,'Blocked track','Malayalam',null,null,null,null,null)"), /Active workspace/)
+  })
+  check('optional customer place and age save atomically, preserve omitted details, validate bounds and require active access', () => {})
   const balance = Number(await scalar('select sum(amount) from wallet_transactions'))
   let expenseId, withdrawalId
   await asUser(founder, async () => {
