@@ -1,5 +1,6 @@
 import { AlertCircle, ArrowDownLeft, ArrowUpRight, Check, CircleDollarSign, Clock3, FileImage, Plus, ReceiptText, Search, ShieldCheck, WalletCards, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Input, Modal, MoneyStat, PageHeader, Select, StatusBadge, Textarea, cn } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
@@ -13,7 +14,8 @@ const withdrawalReasons = Object.keys(withdrawalReasonLabels) as WithdrawalReaso
 export function FinancePage() {
   const { profile } = useAuth()
   const { snapshot, metrics, service, execute, busyAction } = useAppData()
-  const [tab, setTab] = useState<FinanceTab>('overview')
+  const [financeParams] = useSearchParams()
+  const [tab, setTab] = useState<FinanceTab>(() => ['overview','expenses','withdrawals','ledger'].includes(financeParams.get('tab')??'') ? financeParams.get('tab') as FinanceTab : 'overview')
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [withdrawalOpen, setWithdrawalOpen] = useState(false)
   const [withdrawalReview, setWithdrawalReview] = useState<{ item: Withdrawal; decision: 'approved' | 'rejected' } | null>(null)

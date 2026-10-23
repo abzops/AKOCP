@@ -7,6 +7,7 @@ import { useAppData } from '../context/AppDataContext'
 import { aiService } from '../lib/ai-service'
 import { downloadCsv, formatCurrency, formatDate, fromNow, normalizeSearch, paymentStatusLabels, statusLabels } from '../lib/format'
 import { CreateOrderModal } from '../components/CreateOrderModal'
+import { businessDate } from '../lib/dashboard'
 import type { Order, OrderDeletionPreview, OrderStatus } from '../types'
 
 const statuses: Array<'all' | OrderStatus> = ['all', 'inquiry', 'payment_pending', 'in_progress', 'completed', 'delivered', 'cancelled']
@@ -16,6 +17,7 @@ export function OrdersPage() {
   const { snapshot, service, execute, busyAction, showToast } = useAppData()
   const [params, setParams] = useSearchParams()
   const [query, setQuery] = useState('')
+  const [dashboardView, setDashboardView] = useState('')
   const [status, setStatus] = useState<'all' | OrderStatus>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [selected, setSelected] = useState<Order | null>(null)
@@ -28,6 +30,15 @@ export function OrdersPage() {
   const [deletionConfirmation, setDeletionConfirmation] = useState('')
   const [deletionLoading, setDeletionLoading] = useState(false)
   const [deletionError, setDeletionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const requestedStatus=params.get('status')
+    const requestedView=params.get('view')
+    const requestedOrder=params.get('order')
+    if (requestedStatus && statuses.includes(requestedStatus as OrderStatus)) { setStatus(requestedStatus as OrderStatus); setDashboardView(''); setParams({}, {replace:true}) }
+    if (requestedView) { setStatus('all'); setDashboardView(requestedView); setParams({}, {replace:true}) }
+    if (requestedOrder && snapshot) { const order=snapshot.orders.find(o=>o.id===requestedOrder); if(order)setSelected(order);setParams({}, {replace:true}) }
+  }, [params,setParams,snapshot])
 
   useEffect(() => {
     if (params.get('new') === '1') {
@@ -75,6 +86,12 @@ export function OrdersPage() {
 
   if (!snapshot || !profile) return null
   const filtered = snapshot.orders.filter((order) => {
+    const today=businessDate(new Date())
+    const open=!['delivered','cancelled'].includes(order.status)
+    if (dashboardView==='overdue' && !(open&&order.due_date&&order.due_date<today)) return false
+    if (dashboardView==='due_today' && !(open&&order.due_date===today)) return false
+    if (dashboardView==='payment_review' && !snapshot.payments.some(p=>p.order_id===order.id&&p.status==='pending')) return false
+    if (dashboardView==='unpaid' && (order.status==='cancelled'||['confirmed','refunded'].includes(order.payment_status))) return false
     const matchesStatus = status === 'all' || order.status === status
     const text = normalizeSearch(`${order.order_number} ${order.track_name} ${order.language} ${order.customer?.name} ${order.customer?.phone} ${order.service?.code}`)
     return matchesStatus && text.includes(normalizeSearch(query))
@@ -138,6 +155,7 @@ export function OrdersPage() {
         <div><CalendarDays size={19} /><span><strong>{dueSoon}</strong>Due within 48 hours</span></div>
         <div><PackageCheck size={19} /><span><strong>{snapshot.orders.filter((order) => order.status === 'completed').length}</strong>Ready to deliver</span></div>
       </div>
+      {dashboardView && <div className="form-notice"><span>Showing {({overdue:'overdue orders',due_today:'orders due today',payment_review:'orders with payment proofs awaiting review',unpaid:'unpaid or unconfirmed orders'} as Record<string,string>)[dashboardView]??dashboardView}</span><Button variant="ghost" onClick={()=>setDashboardView('')}>Clear dashboard filter</Button></div>}
       <Card className="table-card orders-table-card">
         <div className="table-toolbar">
           <div className="table-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ID, customer, phone or track…" /></div>
