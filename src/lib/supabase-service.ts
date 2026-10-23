@@ -259,7 +259,7 @@ export const supabaseDataService: DataService = {
   },
 
   async createOrder(input: CreateOrderInput, actor: Profile) {
-    const { error } = await supabase.rpc('create_order_with_customer_details', {
+    const { error } = await supabase.rpc('create_order_with_source', {
       p_customer_name: input.customerName,
       p_phone: input.phone,
       p_whatsapp: input.whatsapp || null,
@@ -272,7 +272,8 @@ export const supabaseDataService: DataService = {
       p_assigned_to: input.assignedTo || actor.id,
       p_notes: input.notes || null,
       p_place: input.place?.trim() || null,
-      p_age: input.age?.trim() ? Number(input.age) : null
+      p_age: input.age?.trim() ? Number(input.age) : null,
+      p_source: input.acquisitionSource || null
     })
     assertNoError(error)
   },
@@ -281,6 +282,15 @@ export const supabaseDataService: DataService = {
     const update: Record<string, unknown> = { status, updated_at: new Date().toISOString() }
     if (status === 'delivered') update.delivered_at = new Date().toISOString()
     const { error } = await supabase.from('orders').update(update).eq('id', orderId)
+    assertNoError(error)
+  },
+
+  async updateOrderOperations(orderId,input) {
+    const {error}=await supabase.from('orders').update({...input,updated_at:new Date().toISOString()}).eq('id',orderId).select('id').single()
+    assertNoError(error)
+  },
+  async attributeExpense(expenseId,source) {
+    const {error}=await supabase.from('expenses').update({acquisition_source:source==='unknown'?null:source}).eq('id',expenseId).select('id').single()
     assertNoError(error)
   },
 

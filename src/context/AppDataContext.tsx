@@ -27,6 +27,7 @@ const AppDataContext = createContext<AppDataContextValue | null>(null)
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const { profile } = useAuth()
+  const userId=profile?.id
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -39,6 +40,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const snapshotRef = useRef<AppSnapshot | null>(null)
   const pendingDomains = useRef(new Set<RefreshDomain>())
   const refreshInFlight = useRef<Promise<void> | null>(null)
+  const activeUserId=useRef(userId)
+  useEffect(()=>{activeUserId.current=userId;return()=>{activeUserId.current=undefined}},[userId])
   const service = supabaseDataService
   const cacheKey = profile ? `akocp-snapshot-${profile.id}` : 'akocp-snapshot-anonymous'
 
@@ -51,7 +54,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { snapshotRef.current = snapshot }, [snapshot])
 
   const refresh = useCallback(async (domains: RefreshDomain[] = []) => {
-    if (!profile) return
+    if (!userId) return
     if (refreshInFlight.current) {
       domains.forEach((domain) => pendingDomains.current.add(domain))
       await refreshInFlight.current
@@ -60,12 +63,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setRefreshing(true)
     const run = async () => {
       let requested = domains
+      let liveSettled=false
+      // Read the per-user cache concurrently with the network. Never replace a
+      // fresh response, and keep writes disabled until the live request succeeds.
+      if(!snapshotRef.current)void Promise.resolve().then(()=>get<AppSnapshot>(cacheKey)).then(cached=>{
+        if(cached?.inventorySummary&&!liveSettled&&activeUserId.current===userId&&!snapshotRef.current){
+          snapshotRef.current=cached;setSnapshot(cached);setOffline(true)
+        }
+      }).catch(()=>undefined)
       try {
         do {
           const current = snapshotRef.current
           const next = current && requested.length
-            ? await service.loadDomains(current, profile.id, [...new Set(requested)])
-            : await service.loadSnapshot(profile.id)
+            ? await service.loadDomains(current, userId, [...new Set(requested)])
+            : await service.loadSnapshot(userId)
+          liveSettled=true
+          if(activeUserId.current!==userId)return
           snapshotRef.current = next
           setSnapshot(next)
           setError(null)
@@ -76,6 +89,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           pendingDomains.current.clear()
         } while (requested.length)
       } catch (loadError) {
+        liveSettled=true
+        if(activeUserId.current!==userId)return
         const message = loadError instanceof Error ? loadError.message : 'Could not load workspace data.'
         const cached = await get<AppSnapshot>(cacheKey).catch(() => undefined)
         if (cached) {
@@ -91,6 +106,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           setError(message)
         }
       } finally {
+        liveSettled=true
         setLoading(false)
         setRefreshing(false)
       }
@@ -101,7 +117,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } finally {
       refreshInFlight.current = null
     }
-  }, [cacheKey, profile, service])
+  }, [cacheKey, userId, service])
 
   useEffect(() => {
     void refresh()

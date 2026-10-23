@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, ChevronDown, CircleX, Inbox, LoaderCircle, X } from 'lucide-react'
-import { useEffect, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
 import { formatCurrency } from '../lib/format'
 
@@ -123,18 +123,24 @@ export function MoneyStat({ label, value, icon, tone, trend }: { label: string; 
   return <StatCard label={label} value={formatCurrency(value)} icon={icon} tone={tone} trend={trend} />
 }
 
+const openModalIds:string[]=[]
 export function Modal({ open, onClose, title, description, children, footer, size = 'md' }: { open: boolean; onClose(): void; title: string; description?: string; children: ReactNode; footer?: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl' }) {
   const titleId = useId()
+  const closeRef=useRef(onClose)
+  useEffect(()=>{closeRef.current=onClose},[onClose])
   useEffect(() => {
     if (!open) return
-    const handler = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    openModalIds.push(titleId)
+    const handler = (event: KeyboardEvent) => event.key === 'Escape' && openModalIds.at(-1)===titleId && closeRef.current()
     document.body.classList.add('modal-open')
     window.addEventListener('keydown', handler)
     return () => {
-      document.body.classList.remove('modal-open')
+      const index=openModalIds.indexOf(titleId)
+      if(index>=0)openModalIds.splice(index,1)
+      if(!openModalIds.length)document.body.classList.remove('modal-open')
       window.removeEventListener('keydown', handler)
     }
-  }, [onClose, open])
+  }, [open,titleId])
   if (!open) return null
   return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>

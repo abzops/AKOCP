@@ -1,19 +1,24 @@
 import { AlertTriangle, ArrowUpRight, CircleDollarSign, Crown, Download, Edit3, MessageCircle, Phone, Search, ShoppingBag, Trash2, UserPlus, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, EmptyState, Input, Modal, PageHeader, Textarea } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
 import { downloadCsv, formatCurrency, formatDate, initials, normalizeSearch } from '../lib/format'
+import { FollowupComposer } from '../components/FollowupComposer'
+import { customerSegment } from '../lib/operations'
+import { businessDate } from '../lib/dashboard'
 import type { Customer, CustomerPurgePreview } from '../types'
 
 export function CustomersPage() {
   const { snapshot } = useAppData()
   const [query, setQuery] = useState('')
+  const [params]=useSearchParams()
+  const [segment,setSegment]=useState(params.get('segment')??'all')
   const [selected, setSelected] = useState<Customer | null>(null)
   const navigate = useNavigate()
   if (!snapshot) return null
-  const filtered = snapshot.customers.filter((customer) => normalizeSearch(`${customer.name} ${customer.phone} ${customer.whatsapp} ${customer.place ?? ''} ${customer.notes}`).includes(normalizeSearch(query)))
+  const filtered = snapshot.customers.filter((customer) => (segment==='all'||customerSegment(customer,businessDate(new Date()))===segment)&&normalizeSearch(`${customer.name} ${customer.phone} ${customer.whatsapp} ${customer.place ?? ''} ${customer.notes}`).includes(normalizeSearch(query)))
   const ranked = [...snapshot.customers].sort((a, b) => b.lifetime_revenue - a.lifetime_revenue)
   const top = ranked[0]
   const repeatCustomers = snapshot.customers.filter((customer) => customer.total_orders > 1).length
@@ -29,7 +34,7 @@ export function CustomersPage() {
         <Card><span className="insight-icon"><Crown size={20} /></span><div><span>Average lifetime value</span><strong>{formatCurrency(averageValue)}</strong><small>Across all customers</small></div></Card>
       </div>
       <Card className="table-card customer-table-card">
-        <div className="table-toolbar"><div className="table-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, WhatsApp or notes…" /></div><span className="result-count">{filtered.length} customer{filtered.length === 1 ? '' : 's'}</span></div>
+        <div className="table-toolbar"><div className="table-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, WhatsApp or notes…" /></div><select aria-label="Customer segment" value={segment} onChange={e=>setSegment(e.target.value)}><option value="all">All customers</option><option value="returning">Recent returning customers</option><option value="inactive">No orders for 30+ days</option><option value="recent">Recent first-time customers</option><option value="unknown">Last order not recorded</option></select><span className="result-count">{filtered.length} customer{filtered.length === 1 ? '' : 's'}</span></div>
         {filtered.length ? <div className="customer-grid">{filtered.map((customer) => <button key={customer.id} className="customer-card" onClick={() => setSelected(customer)}><div className="customer-card-top"><span className="avatar large">{initials(customer.name)}</span><div><strong>{customer.name}</strong><small>Customer since {formatDate(customer.created_at)}</small></div>{ranked.indexOf(customer) < 3 && <Badge tone="yellow">#{ranked.indexOf(customer) + 1} value</Badge>}</div><div className="customer-contact"><span><Phone size={15} />{customer.phone}</span><span><MessageCircle size={15} />{customer.whatsapp || customer.phone}</span></div><div className="customer-value"><span><small>Total orders</small><strong>{customer.total_orders}</strong></span><span><small>Lifetime revenue</small><strong>{formatCurrency(customer.lifetime_revenue)}</strong></span><span><small>Last order</small><strong>{formatDate(customer.last_ordered_at)}</strong></span></div>{customer.notes && <p>{customer.notes}</p>}</button>)}</div> : <EmptyState icon={<UsersRound size={24} />} title="No customers found" description="Create an order to add the first customer automatically." />}
       </Card>
       <CustomerModal customer={selected} onClose={() => setSelected(null)} />
@@ -97,7 +102,7 @@ function CustomerModal({ customer, onClose }: { customer: Customer | null; onClo
   }
   const footer = editing
     ? <><Button variant="ghost" onClick={() => setEditing(false)}>Cancel edit</Button><Button form="customer-edit-form" type="submit" loading={busyAction === `customer-${customer.id}`}>Save changes</Button></>
-    : <div className="customer-modal-actions">{profile.role === 'founder' && <Button variant="danger" icon={<Trash2 size={16} />} onClick={() => void openPurge()}>Delete customer</Button>}<Button variant="secondary" icon={<Edit3 size={16} />} onClick={startEdit}>Edit customer</Button></div>
+    : <div className="customer-modal-actions"><FollowupComposer customer={customer}/>{profile.role === 'founder' && <Button variant="danger" icon={<Trash2 size={16} />} onClick={() => void openPurge()}>Delete customer</Button>}<Button variant="secondary" icon={<Edit3 size={16} />} onClick={startEdit}>Edit customer</Button></div>
 
   return (
     <>

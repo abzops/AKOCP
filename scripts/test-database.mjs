@@ -156,6 +156,35 @@ try {
     await assert.rejects(()=>db.query("select create_order_with_customer_details('Blocked','9999999996',null,null,(select id from services where code='AU150'),null,'Blocked track','Malayalam',null,null,null,null,null)"), /Active workspace/)
   })
   check('optional customer place and age save atomically, preserve omitted details, validate bounds and require active access', () => {})
+  await asUser(operations, async () => {
+    const cashBefore=await scalar('select sum(amount) from wallet_transactions')
+    const sourced=await scalar("select create_order_with_source('Source Customer','9999999988',null,null,(select id from services where code='AU150'),null,'Delivery test','Malayalam',null,null,null,null,null,'instagram')")
+    assert.equal(await scalar('select acquisition_source from orders where id=$1',[sourced]),'instagram')
+    await db.query("update orders set final_file_url='https://example.test/final',delivery_version='v2',revision_requested=true,revision_notes='Fix intro' where id=$1",[sourced])
+    assert.equal(await scalar('select revision_requested from orders where id=$1',[sourced]),true)
+    await assert.rejects(()=>db.query("update orders set final_file_url='javascript:alert(1)' where id=$1",[sourced]),/orders_final_file_url_check/)
+    const countBefore=await scalar('select count(*)::int from orders')
+    await assert.rejects(()=>db.query("select create_order_with_source('Bad source','9999999987',null,null,(select id from services where code='AU150'),null,'Bad source','Malayalam',null,null,null,null,null,'made-up')"),/orders_acquisition_source_check/)
+    assert.equal(await scalar('select count(*)::int from orders'),countBefore)
+    assert.equal(await scalar('select sum(amount) from wallet_transactions'),cashBefore)
+  })
+  await asUser(pending,async()=>assert.rejects(()=>db.query("select create_order_with_source('Blocked','9999999986',null,null,(select id from services where code='AU150'),null,'Blocked','Malayalam',null,null,null,null,null,'referral')"),/Active workspace/))
+  assert.equal(await scalar("select has_function_privilege('anon','public.create_order_with_source(text,text,text,text,uuid,uuid,text,text,date,uuid,text,text,integer,text)','execute')"),false)
+  check('source creation is atomic; delivery fields validate URLs; old financial rows remain unchanged and inactive/anon access is blocked',()=>{})
+  let instalmentOrder,firstReceipt,secondReceipt
+  await asUser(operations,async()=>{
+    instalmentOrder=await scalar("select create_order_with_source('Instalments','9999999985',null,null,(select id from services where code='AU150'),null,'Instalment track','Malayalam',null,null,null,null,null,'referral')")
+    firstReceipt=await scalar('insert into payments(order_id,amount,uploaded_by) values($1,50,$2) returning id',[instalmentOrder,operations])
+  })
+  await asUser(founder,()=>db.query('select confirm_payment($1)',[firstReceipt]))
+  await asUser(operations,async()=>{
+    secondReceipt=await scalar('insert into payments(order_id,amount,uploaded_by) values($1,100,$2) returning id',[instalmentOrder,operations])
+    assert.equal(await scalar('select payment_status from orders where id=$1',[instalmentOrder]),'confirmed')
+  })
+  await asUser(founder,async()=>{await db.query('select confirm_payment($1)',[secondReceipt]);await db.query('select confirm_payment($1)',[secondReceipt])})
+  assert.equal(Number(await scalar("select sum(amount) from wallet_transactions where reference_type='payment' and reference_id in ($1,$2)",[firstReceipt,secondReceipt])),150)
+  check('multiple confirmed receipts retain confirmation and each credit reaches the ledger exactly once',()=>{})
+
   const balance = Number(await scalar('select sum(amount) from wallet_transactions'))
   let expenseId, withdrawalId
   await asUser(founder, async () => {

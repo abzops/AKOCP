@@ -5,6 +5,7 @@ import { Badge, Button, Card, EmptyState, MoneyStat, PageHeader, Select, StatCar
 import { useAppData } from '../context/AppDataContext'
 import { getDashboardMetrics, getExpenseBreakdown, getFinanceOutflowAnalysis, getLanguageOrders, getMonthlyRevenue, getServiceRevenue } from '../lib/analytics'
 import { downloadCsv, expenseCategoryLabels, formatCurrency, formatDate, withdrawalReasonLabels } from '../lib/format'
+import { GrowthPanel } from './GrowthPanel'
 import type { AppSnapshot, InventoryTrack } from '../types'
 
 const colors = ['#f4c400', '#f59e0b', '#f97316', '#ec4899', '#8b5cf6', '#38bdf8', '#22c55e']
@@ -59,6 +60,7 @@ export function AnalyticsPage() {
         <Card className="chart-card"><div className="card-heading"><div><span>Audience</span><h2>Orders by language</h2></div></div><div className="chart-wrap donut-large"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={languages} dataKey="value" nameKey="name" innerRadius={57} outerRadius={86} paddingAngle={3}>{languages.map((item, index) => <Cell key={item.name} fill={colors[index % colors.length]} />)}</Pie><Tooltip contentStyle={tooltipStyle} /><Legend iconType="circle" formatter={(value) => <span className="chart-legend-label">{value}</span>} /></PieChart></ResponsiveContainer></div></Card>
         <Card className="chart-card"><div className="card-heading"><div><span>Cost structure</span><h2>Expense breakdown</h2></div></div><div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={expenses} margin={{ left: -20, right: 8, top: 12 }}><CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--chart-grid)" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 9 }} interval={0} /><YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 10 }} /><Tooltip contentStyle={tooltipStyle} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="value" radius={[7, 7, 2, 2]}>{expenses.map((item, index) => <Cell key={item.name} fill={colors[(index + 1) % colors.length]} />)}</Bar></BarChart></ResponsiveContainer></div></Card>
       </div>
+      <GrowthPanel snapshot={snapshot} range={range}/>
       <div className="finance-analysis-section">
         <div className="card-heading"><div><span>Money taken out</span><h2>Withdrawal & expense analysis</h2></div><Badge tone="yellow">Approved only</Badge></div>
         <div className="stats-grid analytics-stats"><MoneyStat label="Approved withdrawals" value={outflows.withdrawalTotal} icon={<UsersRound size={21} />} tone="negative" trend={`${outflows.byPerson.length} people`} /><MoneyStat label="Operating expenses" value={outflows.expenseTotal} icon={<CircleDollarSign size={21} />} tone="negative" trend={`${outflows.expenses.length} categories`} /><MoneyStat label="Pending withdrawals" value={outflows.pendingWithdrawalTotal} icon={<TrendingUp size={21} />} tone="accent" trend="Not deducted" /><MoneyStat label="Pending expenses" value={outflows.pendingExpenseTotal} icon={<ShoppingBag size={21} />} tone="accent" trend="Not deducted" /></div>

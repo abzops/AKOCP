@@ -11,6 +11,7 @@ import './index.css'
 import './pages.css'
 import './admin.css'
 import './responsive.css'
+import './operations.css'
 import App from './App'
 
 let registration: ServiceWorkerRegistration | undefined

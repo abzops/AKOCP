@@ -1,0 +1,17 @@
+import { useMemo } from 'react'
+import { acquisitionChannels, growthData } from '../lib/operations'
+import { businessDate, shiftDay } from '../lib/dashboard'
+import { formatCurrency, downloadCsv } from '../lib/format'
+import { useAuth } from '../context/AuthContext'
+import { useAppData } from '../context/AppDataContext'
+import { Button, EmptyState } from '../components/ui'
+import type { AppSnapshot } from '../types'
+
+export function GrowthPanel({snapshot,range}:{snapshot:AppSnapshot;range:string}) {
+  const {profile}=useAuth(),{service,execute,busyAction}=useAppData()
+  const today=businessDate(new Date()),from=range==='30'?shiftDay(today,-29):range==='90'?shiftDay(today,-89):range==='year'?`${today.slice(0,4)}-01-01`:'0000-01-01'
+  const rows=useMemo(()=>growthData(snapshot,from,today),[snapshot,from,today])
+  const costs=snapshot.expenses.filter(e=>!e.deleted_at&&e.status==='approved'&&e.category==='meta_ads'&&e.expense_date>=from&&e.expense_date<=today)
+  const exportRows=()=>downloadCsv(`AKOCP-growth-${from}-${today}.csv`,rows.map(r=>({Source:r.label,'Enquiries / orders':r.orders,'Orders with receipts':r.paid,'Receipt conversion %':r.orders?Math.round(r.paid/r.orders*100):0,'Confirmed receipts for cohort':r.revenue,'Repeat orders':r.repeat,'Attributed ad costs':r.adSpend,'Receipts less ad costs':r.revenue-r.adSpend})))
+  return <section className="ops-growth" aria-label="Acquisition and growth"><div className="ops-section-heading"><div><span>Where business comes from</span><h2>Sources, conversions & repeat business</h2></div><Button variant="secondary" onClick={exportRows}>Export sources</Button></div><p className="ops-section-note">Orders created in the selected period; confirmed receipts for those orders may arrive later. Conversion means at least one confirmed receipt. Costs use expense dates. Receipts less ad costs is not profit or advertising ROI.</p>{rows.length?<div className="responsive-table"><table><thead><tr><th>Source</th><th>Enquiries / orders</th><th>With receipts</th><th>Conversion</th><th>Repeat orders</th><th>Confirmed receipts</th><th>Ad costs</th><th>Less ad costs</th></tr></thead><tbody>{rows.map(row=><tr key={row.key}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{row.paid}</td><td>{row.orders?`${Math.round(row.paid/row.orders*100)}%`:'—'}</td><td>{row.repeat}</td><td>{formatCurrency(row.revenue)}</td><td>{formatCurrency(row.adSpend)}</td><td>{formatCurrency(row.revenue-row.adSpend)}</td></tr>)}</tbody></table></div>:<EmptyState title="No acquisition data in this period" description="Record enquiry source in new orders or order details."/>}<details className="ops-cost-attribution"><summary>Attribute approved advertising costs ({costs.length})</summary><p>Existing costs stay “Not recorded” until you assign a source. This does not change their amount, approval, or wallet entry.</p>{costs.map(cost=><div key={cost.id}><span>{cost.description}<small>{cost.expense_date} · {formatCurrency(cost.amount)}</small></span><label><span className="ops-visually-hidden">Source for {cost.description}</span><select aria-label={`Source for ${cost.description}`} value={cost.acquisition_source??'unknown'} disabled={profile?.role!=='founder'||busyAction===`expense-source-${cost.id}`} onChange={e=>void execute(`expense-source-${cost.id}`,'Advertising source saved',()=>service.attributeExpense(cost.id,e.target.value),['finance'])}>{Object.entries(acquisitionChannels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></div>)}</details></section>
+}

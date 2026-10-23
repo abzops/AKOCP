@@ -45,7 +45,7 @@ describe('dashboard controls',()=>{
     expect(state.csv.mock.calls[0][0]).toBe('AKOCP-month-2026-09-01-2026-10-23.csv')
     expect(state.csv.mock.calls[0][1]).toHaveLength(2)
     expect(state.csv.mock.calls[0][1][0]['Revenue received']).toBe(500)
-    fireEvent.click(screen.getByRole('button',{name:/Overdue/}))
+    fireEvent.click(within(screen.getByRole('region',{name:'Current priorities'})).getByRole('button',{name:/Overdue/}))
     expect(state.navigate).toHaveBeenCalledWith('/orders?view=overdue')
     fireEvent.click(screen.getByRole('button',{name:'New order'}))
     expect(state.navigate).toHaveBeenCalledWith('/orders?new=1')

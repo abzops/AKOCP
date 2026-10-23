@@ -38,6 +38,28 @@ describe('network and cache recovery', () => {
     mocks.set.mockRejectedValue(new Error('Storage quota exceeded'))
     render(<AppDataProvider><Probe /></AppDataProvider>)
     expect(await screen.findByText('online')).toBeInTheDocument()
-    expect(mocks.get).not.toHaveBeenCalled()
+    expect(mocks.get).toHaveBeenCalledWith('akocp-snapshot-test-user')
+  })
+  it('renders the user cache during a slow request and keeps writes locked until fresh data arrives',async()=>{
+    const cached={inventorySummary:{},syncedAt:'2026-10-22T10:00:00Z'}
+    mocks.get.mockResolvedValue(cached);mocks.set.mockResolvedValue(undefined)
+    let resolveLoad!:(value:unknown)=>void
+    mocks.load.mockImplementation(()=>new Promise(resolve=>{resolveLoad=resolve}))
+    function CachedProbe(){const {snapshot,offline}=useAppData();return <span>{snapshot?offline?'saved read-only':'live writable':'no data'}</span>}
+    render(<AppDataProvider><CachedProbe/></AppDataProvider>)
+    expect(await screen.findByText('saved read-only')).toBeInTheDocument()
+    resolveLoad({...cached,syncedAt:'2026-10-23T10:00:00Z'})
+    expect(await screen.findByText('live writable')).toBeInTheDocument()
+  })
+  it('does not let a late cache read replace a fresh response',async()=>{
+    let resolveCache!:(value:unknown)=>void
+    mocks.get.mockImplementation(()=>new Promise(resolve=>{resolveCache=resolve}))
+    mocks.load.mockResolvedValue({inventorySummary:{},syncedAt:'fresh'})
+    mocks.set.mockResolvedValue(undefined)
+    function CacheRaceProbe(){const {snapshot,offline}=useAppData();return <span>{snapshot?`${snapshot.syncedAt} ${offline?'cached':'live'}`:'waiting'}</span>}
+    render(<AppDataProvider><CacheRaceProbe/></AppDataProvider>)
+    expect(await screen.findByText('fresh live')).toBeInTheDocument()
+    resolveCache({inventorySummary:{},syncedAt:'old'})
+    await waitFor(()=>expect(screen.getByText('fresh live')).toBeInTheDocument())
   })
 })

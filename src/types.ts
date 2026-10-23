@@ -97,6 +97,11 @@ export interface Order {
   payment_status: PaymentStatus
   price: number
   notes?: string | null
+  acquisition_source?: import('./lib/operations').AcquisitionChannel | null
+  final_file_url?: string | null
+  delivery_version?: string | null
+  revision_notes?: string | null
+  revision_requested?: boolean | null
   created_by: string
   created_at: string
   updated_at: string
@@ -126,6 +131,7 @@ export interface Expense {
   amount: number
   category: ExpenseCategory
   description: string
+  acquisition_source?: import('./lib/operations').AcquisitionChannel | null
   receipt_path?: string | null
   expense_date: string
   added_by: string
@@ -425,6 +431,7 @@ export interface CreateOrderInput {
   dueDate?: string
   assignedTo?: string
   notes?: string
+  acquisitionSource?: string
 }
 
 export interface CreateTrackInput {
@@ -449,6 +456,8 @@ export interface DataService {
   deleteOrder(orderId: string, confirmationOrderNumber: string): Promise<OrderDeletionResult>
   createOrder(input: CreateOrderInput, actor: Profile): Promise<void>
   updateOrderStatus(orderId: string, status: OrderStatus, actor: Profile): Promise<void>
+  updateOrderOperations(orderId:string,input:Pick<Order,'acquisition_source'|'final_file_url'|'delivery_version'|'revision_notes'|'revision_requested'|'due_date'|'assigned_to'>):Promise<void>
+  attributeExpense(expenseId:string,source:string):Promise<void>
   uploadPayment(orderId: string, amount: number, upiReference: string, file: File | null, actor: Profile): Promise<void>
   confirmPayment(paymentId: string, actor: Profile): Promise<void>
   completeOrder(orderId: string, addToInventory: boolean, trackInput: CreateTrackInput | null, actor: Profile): Promise<void>

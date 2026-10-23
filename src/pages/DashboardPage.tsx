@@ -9,6 +9,7 @@ import { getMonthlyTargetForecast } from '../lib/analytics'
 import { businessDate, dashboardData, displayDay, orderAttention, shiftDay, type BreakdownUnit, type DashboardPeriod } from '../lib/dashboard'
 import { downloadCsv, formatCurrency, statusLabels } from '../lib/format'
 import { DashboardTarget } from './DashboardTarget'
+import { DashboardPlan } from './DashboardPlan'
 import './dashboard.css'
 
 const periodLabels:Record<DashboardPeriod,string>={day:'Day',week:'Week',month:'Month',all:'All time'}
@@ -16,7 +17,7 @@ const tooltipStyle={background:'var(--surface-elevated)',border:'1px solid var(-
 
 export function DashboardPage() {
   const {profile}=useAuth()
-  const {snapshot,offline}=useAppData()
+  const {snapshot,offline,refreshing}=useAppData()
   const navigate=useNavigate()
   const [period,setPeriod]=useState<DashboardPeriod>('month')
   const [anchor,setAnchor]=useState(()=>businessDate(new Date()))
@@ -41,9 +42,10 @@ export function DashboardPage() {
   const currentPage=Math.min(page,pageCount-1)
   const liveDateLabel=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(new Date(snapshot.syncedAt))
   return <div className="page-stack dashboard-page business-dashboard">
-    {offline&&<div className="form-alert error" role="status">Offline snapshot · reconnect for current balances and order status. Last synced {liveDateLabel}.</div>}
+    {offline&&<div className="form-alert error" role="status">{refreshing&&navigator.onLine?'Saved snapshot · checking live balances and order status.':'Offline snapshot · reconnect for current balances and order status.'} Last synced {liveDateLabel}.</div>}
     <PageHeader eyebrow="Business overview" title="Your target, in focus." description="Know your progress, follow your daily pace, and keep every order moving." action={<div className="button-row"><Button variant="secondary" icon={<Download size={16}/>} onClick={exportReport}>Export report</Button><Button icon={<Plus size={17}/>} onClick={()=>navigate('/orders?new=1')}>New order</Button></div>}/>
     <DashboardTarget snapshot={snapshot} forecast={forecast} now={clock} onEdit={()=>setTargetOpen(true)}/>
+    <DashboardPlan snapshot={snapshot} now={clock}/>
     <div className="dash-report-heading"><h2>Explore your business</h2><p>Choose a period for money, orders, and customer activity.</p></div>
     <section className="dash-period-bar" aria-label="Dashboard date filters">
       <div className="dash-period-tabs" role="group" aria-label="Report period">{(Object.keys(periodLabels) as DashboardPeriod[]).map(item=><button key={item} aria-pressed={period===item} className={cn(period===item&&'active')} onClick={()=>selectPeriod(item)}>{periodLabels[item]}</button>)}</div>

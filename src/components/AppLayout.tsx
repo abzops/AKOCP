@@ -209,7 +209,7 @@ export function AppLayout() {
             <kbd>Ctrl K</kbd>
           </button>
           <div className="topbar-actions">
-            {offline && <span className="offline-pill"><WifiOff size={14} /> Offline</span>}
+            {offline && <span className="offline-pill"><WifiOff size={14} /> {refreshing&&navigator.onLine?'Checking live data':'Offline'}</span>}
             {!offline && <span className={cn('live-pill', realtimeStatus !== 'live' && 'reconnecting')}>{realtimeStatus === 'live' ? 'Live' : 'Reconnecting'}</span>}
             <IconButton label="Open operations copilot" className="copilot-trigger" onClick={() => setCopilotOpen(true)}><Bot size={18} /></IconButton>
             <IconButton label="Refresh data" onClick={() => void refresh()} className={refreshing ? 'spin-child' : ''}><RefreshCw size={18} /></IconButton>

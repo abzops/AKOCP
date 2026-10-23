@@ -1,5 +1,5 @@
 import { AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, ClipboardCheck, Download, FileImage, Filter, MessageCircle, Music2, PackageCheck, Plus, Search, Send, Trash2, UserRound, XCircle } from 'lucide-react'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Input, Modal, PageHeader, Select, StatusBadge, Textarea, cn } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
@@ -8,6 +8,10 @@ import { aiService } from '../lib/ai-service'
 import { downloadCsv, formatCurrency, formatDate, fromNow, normalizeSearch, paymentStatusLabels, statusLabels } from '../lib/format'
 import { CreateOrderModal } from '../components/CreateOrderModal'
 import { businessDate } from '../lib/dashboard'
+import { OrderBoard } from '../components/OrderBoard'
+import { OrderOperations, OrderPayments } from '../components/OrderOperations'
+import { FollowupComposer } from '../components/FollowupComposer'
+import { orderBalance } from '../lib/operations'
 import type { Order, OrderDeletionPreview, OrderStatus } from '../types'
 
 const statuses: Array<'all' | OrderStatus> = ['all', 'inquiry', 'payment_pending', 'in_progress', 'completed', 'delivered', 'cancelled']
@@ -17,6 +21,8 @@ export function OrdersPage() {
   const { snapshot, service, execute, busyAction, showToast } = useAppData()
   const [params, setParams] = useSearchParams()
   const [query, setQuery] = useState('')
+  const [viewMode,setViewMode]=useState<'board'|'list'>('board')
+  const [visibleRows,setVisibleRows]=useState(50)
   const [dashboardView, setDashboardView] = useState('')
   const [status, setStatus] = useState<'all' | OrderStatus>('all')
   const [createOpen, setCreateOpen] = useState(false)
@@ -84,14 +90,19 @@ export function OrdersPage() {
     return () => { active = false }
   }, [deletingOrder, service])
 
+  useEffect(()=>setVisibleRows(50),[query,status,dashboardView,viewMode])
   if (!snapshot || !profile) return null
+  const today=businessDate(new Date())
+  const selectedCurrent=selected?snapshot.orders.find(o=>o.id===selected.id)??selected:null
   const filtered = snapshot.orders.filter((order) => {
-    const today=businessDate(new Date())
     const open=!['delivered','cancelled'].includes(order.status)
     if (dashboardView==='overdue' && !(open&&order.due_date&&order.due_date<today)) return false
     if (dashboardView==='due_today' && !(open&&order.due_date===today)) return false
     if (dashboardView==='payment_review' && !snapshot.payments.some(p=>p.order_id===order.id&&p.status==='pending')) return false
-    if (dashboardView==='unpaid' && (order.status==='cancelled'||['confirmed','refunded'].includes(order.payment_status))) return false
+    if (dashboardView==='unpaid' && orderBalance(order,snapshot.payments).collectible<=0) return false
+    if (dashboardView==='balance_review' && !orderBalance(order,snapshot.payments).review) return false
+    if (dashboardView==='unassigned' && !(open&&!order.assigned_to)) return false
+    if (dashboardView==='revisions' && !order.revision_requested) return false
     const matchesStatus = status === 'all' || order.status === status
     const text = normalizeSearch(`${order.order_number} ${order.track_name} ${order.language} ${order.customer?.name} ${order.customer?.phone} ${order.service?.code}`)
     return matchesStatus && text.includes(normalizeSearch(query))
@@ -155,22 +166,24 @@ export function OrdersPage() {
         <div><CalendarDays size={19} /><span><strong>{dueSoon}</strong>Due within 48 hours</span></div>
         <div><PackageCheck size={19} /><span><strong>{snapshot.orders.filter((order) => order.status === 'completed').length}</strong>Ready to deliver</span></div>
       </div>
-      {dashboardView && <div className="form-notice"><span>Showing {({overdue:'overdue orders',due_today:'orders due today',payment_review:'orders with payment proofs awaiting review',unpaid:'unpaid or unconfirmed orders'} as Record<string,string>)[dashboardView]??dashboardView}</span><Button variant="ghost" onClick={()=>setDashboardView('')}>Clear dashboard filter</Button></div>}
+      {dashboardView && <div className="form-notice"><span>Showing {({overdue:'overdue orders',due_today:'orders due today',payment_review:'orders with payment proofs awaiting review',unpaid:'orders with unconfirmed quote balances',balance_review:'orders with payment differences to review',unassigned:'unassigned open orders',revisions:'orders with revision requests'} as Record<string,string>)[dashboardView]??dashboardView}</span><Button variant="ghost" onClick={()=>setDashboardView('')}>Clear dashboard filter</Button></div>}
+      <div className="ops-view-switch" role="group" aria-label="Order display"><button aria-pressed={viewMode==='board'} onClick={()=>setViewMode('board')}>Workflow board</button><button aria-pressed={viewMode==='list'} onClick={()=>setViewMode('list')}>List</button></div>
       <Card className="table-card orders-table-card">
         <div className="table-toolbar">
           <div className="table-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ID, customer, phone or track…" /></div>
           <div className="filter-select"><Filter size={16} /><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>{statuses.map((item) => <option key={item} value={item}>{item === 'all' ? 'All statuses' : statusLabels[item]}</option>)}</select></div>
           <span className="result-count">{filtered.length} order{filtered.length === 1 ? '' : 's'}</span>
         </div>
-        {filtered.length ? <>
-          <div className="responsive-table order-table"><table><thead><tr><th>Order</th><th>Customer</th><th>Service</th><th>Due date</th><th>Payment</th><th>Status</th><th className="align-right">Amount</th><th /></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} onClick={() => openDetails(order)}><td><strong>{order.order_number}</strong><small>{fromNow(order.created_at)}</small></td><td><strong>{order.customer?.name ?? 'Unknown'}</strong><small>{order.customer?.phone}</small></td><td><span className="service-code">{order.service?.code}</span><small>{order.track_name}</small></td><td>{formatDate(order.due_date)}<small>{order.language}</small></td><td><StatusBadge status={order.payment_status} /></td><td><StatusBadge status={order.status} /></td><td className="align-right"><strong>{formatCurrency(order.price)}</strong></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
-          <div className="mobile-order-list">{filtered.map((order) => <button key={order.id} onClick={() => openDetails(order)}><div className="mobile-order-top"><span><strong>{order.order_number}</strong><small>{fromNow(order.created_at)}</small></span><b>{formatCurrency(order.price)}</b></div><h3>{order.track_name}</h3><p>{order.customer?.name} · {order.language}</p><div><StatusBadge status={order.status} /><StatusBadge status={order.payment_status} /></div></button>)}</div>
+        {viewMode==='board'?<OrderBoard orders={filtered} payments={snapshot.payments} onOpen={openDetails}/>:filtered.length ? <>
+          <div className="responsive-table order-table"><table><thead><tr><th>Order</th><th>Customer</th><th>Service</th><th>Due date</th><th>Payment</th><th>Status</th><th className="align-right">Amount</th><th /></tr></thead><tbody>{filtered.slice(0,visibleRows).map((order) => <tr key={order.id} onClick={() => openDetails(order)}><td><strong>{order.order_number}</strong><small>{fromNow(order.created_at)}</small></td><td><strong>{order.customer?.name ?? 'Unknown'}</strong><small>{order.customer?.phone}</small></td><td><span className="service-code">{order.service?.code}</span><small>{order.track_name}</small></td><td>{formatDate(order.due_date)}<small>{order.language}</small></td><td><StatusBadge status={order.payment_status} /></td><td><StatusBadge status={order.status} /></td><td className="align-right"><strong>{formatCurrency(order.price)}</strong></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
+          <div className="mobile-order-list">{filtered.slice(0,visibleRows).map((order) => <button key={order.id} onClick={() => openDetails(order)}><div className="mobile-order-top"><span><strong>{order.order_number}</strong><small>{fromNow(order.created_at)}</small></span><b>{formatCurrency(order.price)}</b></div><h3>{order.track_name}</h3><p>{order.customer?.name} · {order.language}</p><div><StatusBadge status={order.status} /><StatusBadge status={order.payment_status} /></div></button>)}</div>
+          {filtered.length>visibleRows&&<Button variant="ghost" onClick={()=>setVisibleRows(n=>n+50)}>Show {Math.min(50,filtered.length-visibleRows)} more orders</Button>}
         </> : <EmptyState icon={<ClipboardCheck size={25} />} title="No matching orders" description="Adjust the filters or create a new customer order." action={<Button icon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>New order</Button>} />}
       </Card>
 
       <CreateOrderModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <OrderDetailsModal
-        order={selected}
+        order={selectedCurrent}
         onClose={() => setSelected(null)}
         onUpload={() => { setPaymentOrder(selected); setSelected(null) }}
         onConfirm={() => selected && void confirmPayment(selected)}
@@ -204,8 +217,10 @@ function OrderDetailsModal({ order, onClose, onUpload, onConfirm, onComplete, on
       <div className="order-detail-hero"><div><span className="service-code large">{order.service?.code}</span><div><strong>{order.service?.name}</strong><small>Created {formatDate(order.created_at, 'long')}</small></div></div><strong>{formatCurrency(order.price)}</strong></div>
       <div className="detail-status-row"><div><span>Order status</span><StatusBadge status={order.status} /></div><div><span>Payment</span><StatusBadge status={order.payment_status} /></div></div>
       <div className="detail-grid"><div><UserRound size={17} /><span><small>Customer</small><strong>{order.customer?.name}</strong><a href={`tel:${order.customer?.phone}`}>{order.customer?.phone}</a>{(customer?.place || customer?.age != null) && <em>{[customer?.place, customer?.age != null ? `${customer.age} years old` : null].filter(Boolean).join(" · ")}</em>}</span></div><div><CalendarDays size={17} /><span><small>Due date</small><strong>{formatDate(order.due_date)}</strong><em>{order.assignee?.full_name ? `Assigned to ${order.assignee.full_name}` : 'Unassigned'}</em></span></div><div><Music2 size={17} /><span><small>Inventory</small><strong>{order.inventory_track_id ? 'Existing track' : 'New creation'}</strong><em>{order.track_name}</em></span></div><div><MessageCircle size={17} /><span><small>Notes</small><strong>{order.notes || 'No notes added'}</strong></span></div></div>
+      <OrderPayments order={order} onUpload={onUpload}/>
+      {customer&&<FollowupComposer customer={customer} order={order}/>}
+      <OrderOperations order={order}/>
       <div className="detail-actions">
-        {order.payment_status === 'unpaid' && order.status !== 'cancelled' && <Button icon={<FileImage size={16} />} onClick={onUpload}>Upload payment proof</Button>}
         {order.payment_status === 'proof_uploaded' && canConfirm && <Button icon={<CircleDollarSign size={16} />} loading={loading} onClick={onConfirm}>Confirm payment</Button>}
         {order.payment_status === 'confirmed' && ['inquiry', 'payment_pending'].includes(order.status) && <Button icon={<Send size={16} />} onClick={onProgress}>Start production</Button>}
         {order.payment_status === 'confirmed' && order.status === 'in_progress' && <Button icon={<CheckCircle2 size={16} />} onClick={onComplete}>Mark complete</Button>}
@@ -219,11 +234,12 @@ function OrderDetailsModal({ order, onClose, onUpload, onConfirm, onComplete, on
 
 function PaymentModal({ order, handoff, onClose }: { order: Order | null; handoff?: { proposalId: string; amount: number; upiReference: string } | null; onClose(): void }) {
   const { profile } = useAuth()
-  const { service, execute, busyAction } = useAppData()
+  const { service, execute, busyAction,snapshot } = useAppData()
   const [amount, setAmount] = useState('')
   const [reference, setReference] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  useEffect(() => { if (order) { setAmount(String(handoff?.amount ?? order.price)); setReference(handoff?.upiReference ?? ''); setFile(null) } }, [handoff, order])
+  const initializedPayment=useRef<string|null>(null)
+  useEffect(() => { if(!order){initializedPayment.current=null;return} const key=order.id+(handoff?.proposalId??'');if(initializedPayment.current===key)return;initializedPayment.current=key; if (order) { setAmount(String(handoff?.amount ?? (snapshot?Math.max(orderBalance(order,snapshot.payments).balance-orderBalance(order,snapshot.payments).pending,0):order.price))); setReference(handoff?.upiReference ?? ''); setFile(null) } }, [handoff, order,snapshot])
   if (!order || !profile) return null
   const submit = async (event: FormEvent) => {
     event.preventDefault()

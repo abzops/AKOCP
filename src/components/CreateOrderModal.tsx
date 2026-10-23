@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
 import { formatCurrency } from '../lib/format'
 import { normalizePhone } from '../lib/phone'
+import { acquisitionChannels } from '../lib/operations'
 import type { CreateOrderInput, Customer, InventoryTrack } from '../types'
 import { Badge, Button, Input, Modal, Select, Textarea, cn } from './ui'
 
@@ -108,6 +109,7 @@ export function CreateOrderModal({ open, onClose }: { open: boolean; onClose(): 
         <div className="form-grid two"><Input label="Place (optional)" autoComplete="address-level2" maxLength={120} value={form.place ?? ''} placeholder="Town or city" onChange={event => update('place',event.target.value)} /><Input label="Age (optional)" type="number" min={0} max={120} step={1} value={form.age ?? ''} placeholder="Years" onChange={event => update('age',event.target.value)} /></div>
         <div className="form-grid two"><Input label="Due date (optional)" type="date" value={form.dueDate ?? ''} onChange={event => update('dueDate',event.target.value)} /><Input label="WhatsApp (optional)" type="tel" value={form.whatsapp ?? ''} placeholder="Same as phone" onChange={event => update('whatsapp',event.target.value)} /></div>
         <Select label="Assign to" value={form.assignedTo ?? ''} onChange={event => update('assignedTo',event.target.value)}><option value="">Assign to me</option>{snapshot.profiles.filter(p => p.active).map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}</Select>
+        <Select label="How did this enquiry reach us?" value={form.acquisitionSource??'unknown'} onChange={event=>update('acquisitionSource',event.target.value)}>{Object.entries(acquisitionChannels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</Select>
         <Textarea label="Order notes (optional)" value={form.notes ?? ''} rows={2} placeholder="Key, timing, or customer requests" onChange={event => update('notes',event.target.value)} />
       </div></details>
     </form>

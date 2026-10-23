@@ -27,7 +27,7 @@ function AuthGate() {
   if (passwordRecovery) return <PasswordRecoveryPage />
   if (!profile) return <AuthPage />
   if (!profile.active) return <main className="auth-page"><section className="auth-panel"><div className="auth-card"><div className="auth-heading"><h2>Workspace access is pending</h2><p>A Founder must approve or restore access for {profile.email}.</p></div><Button onClick={() => void signOut()}>Sign out</Button></div></section></main>
-  return <AppDataProvider><Workspace /></AppDataProvider>
+  return <AppDataProvider key={profile.id}><Workspace /></AppDataProvider>
 }
 
 function Workspace() {
