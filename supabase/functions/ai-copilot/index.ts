@@ -187,7 +187,7 @@ export function providerOptions(model: string, maxTokens: number) {
   };
 }
 
-async function callProvider(
+export async function callProvider(
   apiKey: string,
   model: string,
   messages: ChatMessage[],
@@ -196,6 +196,9 @@ async function callProvider(
   allowTools: boolean,
   onChunk?: (text: string) => void,
 ) {
+  // NVIDIA's Nemotron endpoint parses structured tool calls in JSON mode.
+  // Keep the app's SSE connection, but request complete provider turns.
+  const streamProvider = !!onChunk && !model.startsWith("nvidia/");
   const response = await fetch(NVIDIA_URL, {
     method: "POST",
     headers: {
@@ -207,7 +210,7 @@ async function callProvider(
       messages,
       tools: tools.length ? tools : undefined,
       tool_choice: tools.length ? (allowTools ? "auto" : "none") : undefined,
-      stream: !!onChunk,
+      stream: streamProvider,
       ...providerOptions(model, maxTokens),
     }),
     signal: AbortSignal.timeout(90_000),
@@ -221,10 +224,11 @@ async function callProvider(
     );
   }
 
-  if (!onChunk || !response.body) {
+  if (!streamProvider || !response.body) {
     const payload = await response.json() as ProviderResponse;
     const message = payload.choices?.[0]?.message;
     if (!message) throw new ProviderError(502, "NVIDIA returned an empty response");
+    if (onChunk && message.content && !message.tool_calls?.length) onChunk(message.content);
     return { message, usage: payload.usage ?? {} };
   }
 
@@ -258,7 +262,7 @@ async function callProvider(
         
         if (delta.content) {
           finalContent += delta.content;
-          onChunk(delta.content);
+          onChunk?.(delta.content);
         }
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
@@ -1233,7 +1237,7 @@ export async function handleRequest(request: Request) {
       }
       try {
         const { data: settingsRow } = await client.from("ai_settings").select("primary_model").eq("id", 1).single();
-        const modelToCheck = String(settingsRow?.primary_model ?? "openai/gpt-oss-20b");
+        const modelToCheck = String(settingsRow?.primary_model ?? "nvidia/nemotron-3.5-lightning-30b-a3b");
         await callProvider(nvidiaKey, modelToCheck, [{ role: "user", content: "hi" }], [], 1, false);
         if (serviceKey) {
           const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });

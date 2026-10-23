@@ -89,6 +89,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
   const [checkingHealth, setCheckingHealth] = useState(false)
   const [streamingText, setStreamingText] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
+  const newChatRequested = useRef(false)
 
   const reloadConversations = useCallback(async (all = auditAll) => {
     if (!profile) return
@@ -128,7 +129,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
         setSettings(nextSettings)
         setUsage(nextUsage)
         setConversations(nextConversations)
-        if (!conversationId && nextConversations[0]) await loadConversation(nextConversations[0].id)
+        if (!conversationId && !newChatRequested.current && nextConversations[0]) await loadConversation(nextConversations[0].id)
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'The copilot database is not ready.')
       } finally {
@@ -147,6 +148,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
   }, [loading, messages, proposals])
 
   const newConversation = () => {
+    newChatRequested.current = true
     setConversationId(null)
     setMessages([])
     setProposals([])

@@ -224,7 +224,7 @@ begin
   if new.status = 'completed' and old.status is distinct from 'completed' and not internal_change then
     raise exception 'Use the complete order workflow';
   end if;
-  if new.status = 'delivered' and old.status <> 'completed' then
+  if new.status = 'delivered' and new.status is distinct from old.status and old.status <> 'completed' then
     raise exception 'Only a completed order can be delivered';
   end if;
   if old.status in ('delivered', 'cancelled') and new.status is distinct from old.status then

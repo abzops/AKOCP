@@ -8,11 +8,11 @@ const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completio
   method: 'POST',
   headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    model: 'openai/gpt-oss-20b',
+    model: 'nvidia/nemotron-3.5-lightning-30b-a3b',
     messages: [{ role: 'user', content: 'Call check_connection with status OK.' }],
     tools: [{ type: 'function', function: { name: 'check_connection', description: 'Synthetic connection test; no business action.', parameters: { type: 'object', properties: { status: { type: 'string', enum: ['OK'] } }, required: ['status'], additionalProperties: false } } }],
     tool_choice: 'auto',
-    reasoning_effort: 'low', max_tokens: 512, stream: false,
+    max_tokens: 512, stream: false,
   }),
   signal: AbortSignal.timeout(90_000),
 })

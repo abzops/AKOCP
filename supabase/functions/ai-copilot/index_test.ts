@@ -1,5 +1,6 @@
 import {
   availableTools,
+  callProvider,
   boundedResult,
   parseToolArguments,
   providerOptions,
@@ -88,4 +89,19 @@ Deno.test("GPT OSS uses low reasoning effort for bounded agent latency", () => {
   const options = providerOptions("openai/gpt-oss-20b", 800);
   assertEquals(options.reasoning_effort, "low");
   assertEquals(options.max_tokens, 800);
+});
+
+Deno.test("Nemotron keeps structured tool calls while the app uses SSE", async () => {
+  const originalFetch = globalThis.fetch;
+  const chunks: string[] = [];
+  const toolCall = { id: "call_test", type: "function", function: { name: "search_records", arguments: '{"entity":"orders","query":"test"}' } };
+  try {
+    globalThis.fetch = (_url, init) => {
+      assertEquals(JSON.parse(String(init?.body)).stream, false);
+      return Promise.resolve(new Response(JSON.stringify({ choices: [{message: {role:"assistant",content:null,tool_calls:[toolCall]}}] }), {headers:{"Content-Type":"application/json"}}));
+    };
+    const result = await callProvider("synthetic-test-key", "nvidia/nemotron-3.5-lightning-30b-a3b", [{role:"user",content:"Read live orders"}], availableTools("founder"), 800, true, (chunk) => chunks.push(chunk));
+    assertEquals(result.message.tool_calls, [toolCall]);
+    assertEquals(chunks, []);
+  } finally { globalThis.fetch = originalFetch; }
 });

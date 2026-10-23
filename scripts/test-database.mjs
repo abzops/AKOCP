@@ -64,7 +64,7 @@ try {
   const { ai_settings: oldSettings, ...oldBusiness } = reapplied
   const { ai_settings: newSettings, ...newBusiness } = configured
   check('model configuration preserves every business row', () => assert.deepEqual(newBusiness, oldBusiness))
-  check('agent uses the supported NVIDIA model', () => assert.equal(newSettings[0].primary_model, 'openai/gpt-oss-20b'))
+  check('agent uses the supported NVIDIA model', () => assert.equal(newSettings[0].primary_model, 'nvidia/nemotron-3.5-lightning-30b-a3b'))
   await db.query("insert into auth.users(id,email,raw_user_meta_data) values ($1,'pending@example.test','{\"full_name\":\"Pending User\"}')", [pending])
   const profile = (await db.query('select role, active from profiles where id = $1', [pending])).rows[0]
   check('new registration is inactive Operations', () => assert.deepEqual(profile, { role: 'operations', active: false }))
@@ -101,6 +101,21 @@ try {
   })
   assert.equal(await scalar("select count(*)::int from wallet_transactions where reference_type='payment' and reference_id=$1", [paymentId]), 1)
   check('payment confirmation is Founder-only, idempotent, and amount immutable', () => {})
+  let historicalOrder, historicalPayment
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[founder])
+  historicalOrder = await scalar("insert into orders(order_number,customer_id,service_id,track_name,language,status,price,created_by) select 'HISTORICAL-DELIVERED',customer_id,service_id,'Historical delivered track','Malayalam','delivered',150,$1 from orders where id=$2 returning id",[founder,orderId])
+  await asUser(founder, async () => {
+    historicalPayment = await scalar('insert into payments(order_id,amount,uploaded_by) values($1,150,$2) returning id',[historicalOrder,founder])
+    await db.query('select confirm_payment($1)',[historicalPayment])
+    await db.query('select confirm_payment($1)',[historicalPayment])
+    await assert.rejects(() => db.query("update orders set status='in_progress' where id=$1",[historicalOrder]), /Finalized orders/)
+    const uncompleted = await scalar("select create_order('Transition Test','9999999998',null,null,(select id from services where code='AU150'),null,'Uncompleted track','Malayalam',null,null,null)")
+    await assert.rejects(() => db.query("update orders set status='delivered' where id=$1",[uncompleted]), /Only a completed order/)
+  })
+  assert.equal(await scalar('select status from orders where id=$1',[historicalOrder]),'delivered')
+  assert.equal(await scalar('select payment_status from orders where id=$1',[historicalOrder]),'confirmed')
+  assert.equal(await scalar("select count(*)::int from wallet_transactions where reference_type='payment' and reference_id=$1",[historicalPayment]),1)
+  check('delivered orders accept idempotent payment confirmation while final-status guards remain', () => {})
   const balance = Number(await scalar('select sum(amount) from wallet_transactions'))
   let expenseId, withdrawalId
   await asUser(founder, async () => {

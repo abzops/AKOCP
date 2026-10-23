@@ -241,8 +241,8 @@ export interface AiActionProposal {
 export interface AiSettings {
   id: number
   enabled: boolean
-  primary_model: 'openai/gpt-oss-20b'
-  fallback_model: 'openai/gpt-oss-20b'
+  primary_model: 'nvidia/nemotron-3.5-lightning-30b-a3b' | 'openai/gpt-oss-20b'
+  fallback_model: 'nvidia/nemotron-3.5-lightning-30b-a3b' | 'openai/gpt-oss-20b'
   daily_request_limit: number
   max_output_tokens: number
   provider_status: 'not_checked' | 'available' | 'degraded' | 'unavailable'
