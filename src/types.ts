@@ -456,7 +456,7 @@ export interface DataService {
   previewOrderDeletion(orderId: string): Promise<OrderDeletionPreview>
   deleteOrder(orderId: string, confirmationOrderNumber: string): Promise<OrderDeletionResult>
   createOrder(input: CreateOrderInput, actor: Profile): Promise<void>
-  updateOrderStatus(orderId: string, status: OrderStatus, actor: Profile): Promise<void>
+  updateOrderStatus(orderId: string, status: OrderStatus, actor: Profile, expectedStatus?: OrderStatus): Promise<void>
   updateOrderOperations(orderId:string,input:Pick<Order,'acquisition_source'|'final_file_url'|'delivery_version'|'revision_notes'|'revision_requested'|'due_date'|'assigned_to'>):Promise<void>
   attributeExpense(expenseId:string,source:string):Promise<void>
   uploadPayment(orderId: string, amount: number, upiReference: string, file: File | null, actor: Profile): Promise<void>

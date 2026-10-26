@@ -30,7 +30,7 @@ describe('order operation workflows',()=>{
   })
   it('opens board cards for review without silently changing workflow status',()=>{
     const open=vi.fn();render(<OrderBoard orders={[order]} payments={[]} onOpen={open}/>)
-    fireEvent.click(screen.getByRole('button',{name:/AK-TEST/}))
+    fireEvent.click(screen.getByRole('button',{name:/^AK-TEST/}))
     expect(open).toHaveBeenCalledWith(order);expect(mocks.save).not.toHaveBeenCalled()
   })
   it('lets the user edit a follow-up and only prepares a WhatsApp link',()=>{

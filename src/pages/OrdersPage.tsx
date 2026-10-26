@@ -12,13 +12,14 @@ import { OrderBoard } from '../components/OrderBoard'
 import { OrderOperations, OrderPayments } from '../components/OrderOperations'
 import { FollowupComposer } from '../components/FollowupComposer'
 import { orderBalance } from '../lib/operations'
+import { workflowMoveError } from '../lib/order-workflow'
 import type { Order, OrderDeletionPreview, OrderStatus } from '../types'
 
 const statuses: Array<'all' | OrderStatus> = ['all', 'inquiry', 'payment_pending', 'in_progress', 'completed', 'delivered', 'cancelled']
 
 export function OrdersPage() {
   const { profile } = useAuth()
-  const { snapshot, service, execute, busyAction, showToast } = useAppData()
+  const { snapshot, service, execute, busyAction, showToast, offline } = useAppData()
   const [params, setParams] = useSearchParams()
   const [query, setQuery] = useState('')
   const [viewMode,setViewMode]=useState<'board'|'list'>('board')
@@ -112,8 +113,18 @@ export function OrdersPage() {
 
   const openDetails = (order: Order) => setSelected(order)
   const changeStatus = async (order: Order, nextStatus: OrderStatus) => {
-    await execute(`order-${order.id}`, `Order marked ${statusLabels[nextStatus].toLowerCase()}`, () => service.updateOrderStatus(order.id, nextStatus, profile))
+    await execute(`order-${order.id}`, `Order marked ${statusLabels[nextStatus].toLowerCase()}`, () => service.updateOrderStatus(order.id, nextStatus, profile, order.status))
     setSelected(null)
+  }
+  const moveBoardOrder = async (dragged: Order, target: OrderStatus) => {
+    if (offline || busyAction) return
+    const current = snapshot.orders.find(order => order.id === dragged.id)
+    if (!current) { showToast({ type: 'error', title: 'Order no longer available', message: 'Refresh the board and try again.' }); return }
+    const error = workflowMoveError(current, target)
+    if (error) { showToast({ type: 'error', title: 'Cannot move order', message: error }); return }
+    if (target === 'completed') { setCompleteOrder(current); return }
+    if (target === 'cancelled') { setCancelOrder(current); return }
+    await changeStatus(current, target)
   }
   const confirmPayment = async (order: Order) => {
     const payment = snapshot.payments.find((item) => item.order_id === order.id && item.status === 'pending')
@@ -123,7 +134,7 @@ export function OrdersPage() {
   }
   const cancel = async () => {
     if (!cancelOrder) return
-    await execute(`cancel-${cancelOrder.id}`, 'Order cancelled', () => service.updateOrderStatus(cancelOrder.id, 'cancelled', profile))
+    await execute(`cancel-${cancelOrder.id}`, 'Order cancelled', () => service.updateOrderStatus(cancelOrder.id, 'cancelled', profile, cancelOrder.status))
     setCancelOrder(null)
     setSelected(null)
   }
@@ -174,7 +185,7 @@ export function OrdersPage() {
           <div className="filter-select"><Filter size={16} /><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>{statuses.map((item) => <option key={item} value={item}>{item === 'all' ? 'All statuses' : statusLabels[item]}</option>)}</select></div>
           <span className="result-count">{filtered.length} order{filtered.length === 1 ? '' : 's'}</span>
         </div>
-        {viewMode==='board'?<OrderBoard orders={filtered} payments={snapshot.payments} onOpen={openDetails}/>:filtered.length ? <>
+        {viewMode==='board'?<OrderBoard orders={filtered} payments={snapshot.payments} onOpen={openDetails} onMove={moveBoardOrder} disabled={offline || Boolean(busyAction)}/>:filtered.length ? <>
           <div className="responsive-table order-table"><table><thead><tr><th>Order</th><th>Customer</th><th>Service</th><th>Due date</th><th>Payment</th><th>Status</th><th className="align-right">Amount</th><th /></tr></thead><tbody>{filtered.slice(0,visibleRows).map((order) => <tr key={order.id} onClick={() => openDetails(order)}><td><strong>{order.order_number}</strong><small>{fromNow(order.created_at)}</small></td><td><strong>{order.customer?.name ?? 'Unknown'}</strong><small>{order.customer?.phone}</small></td><td><span className="service-code">{order.service?.code}</span><small>{order.track_name}</small></td><td>{formatDate(order.due_date)}<small>{order.language}</small></td><td><StatusBadge status={order.payment_status} /></td><td><StatusBadge status={order.status} /></td><td className="align-right"><strong>{formatCurrency(order.price)}</strong></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
           <div className="mobile-order-list">{filtered.slice(0,visibleRows).map((order) => <button key={order.id} onClick={() => openDetails(order)}><div className="mobile-order-top"><span><strong>{order.order_number}</strong><small>{fromNow(order.created_at)}</small></span><b>{formatCurrency(order.price)}</b></div><h3>{order.track_name}</h3><p>{order.customer?.name} · {order.language}</p><div><StatusBadge status={order.status} /><StatusBadge status={order.payment_status} /></div></button>)}</div>
           {filtered.length>visibleRows&&<Button variant="ghost" onClick={()=>setVisibleRows(n=>n+50)}>Show {Math.min(50,filtered.length-visibleRows)} more orders</Button>}

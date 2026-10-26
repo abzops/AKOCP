@@ -279,11 +279,14 @@ export const supabaseDataService: DataService = {
     assertNoError(error)
   },
 
-  async updateOrderStatus(orderId: string, status: OrderStatus) {
+  async updateOrderStatus(orderId: string, status: OrderStatus, _actor, expectedStatus) {
     const update: Record<string, unknown> = { status, updated_at: new Date().toISOString() }
     if (status === 'delivered') update.delivered_at = new Date().toISOString()
-    const { error } = await supabase.from('orders').update(update).eq('id', orderId)
+    let query = supabase.from('orders').update(update).eq('id', orderId)
+    if (expectedStatus) query = query.eq('status', expectedStatus)
+    const { data, error } = await query.select('id').maybeSingle()
     assertNoError(error)
+    if (!data) throw new Error('This order changed or is no longer available. Refresh the board before trying again.')
   },
 
   async updateOrderOperations(orderId,input) {
