@@ -2,6 +2,8 @@ import {
   AlertTriangle,
   Bot,
   Check,
+  Copy,
+  ArrowDown,
   ChevronLeft,
   Clock3,
   History,
@@ -14,7 +16,7 @@ import {
   Trash2,
   X
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
@@ -33,10 +35,16 @@ import type {
   WithdrawalReason
 } from '../types'
 import { Badge, Button, ConfirmDialog, IconButton, cn } from './ui'
+import './copilot.css'
+
+const MarkdownAnswer = lazy(() => import('./CopilotAnswer').then(module => ({ default: module.CopilotAnswer })))
+function CopilotAnswer({ content }: { content: string }) {
+  return <Suspense fallback={<p>{content}</p>}><MarkdownAnswer content={content}/></Suspense>
+}
 
 const starters = [
   'What work needs attention today?',
-  'Show this month’s recorded sales, revenue, and wallet balance.',
+  'What is the total amount of expenses in last month?',
   'ഈ ആഴ്ച pending orders ഏതൊക്കെയാണ്?',
   'Find duplicate inventory tracks for me.'
 ]
@@ -88,7 +96,15 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
   const [busyProposal, setBusyProposal] = useState<string | null>(null)
   const [checkingHealth, setCheckingHealth] = useState(false)
   const [streamingText, setStreamingText] = useState<string | null>(null)
-  const endRef = useRef<HTMLDivElement | null>(null)
+  const [progress, setProgress] = useState('Checking live records…')
+  const [showLatest, setShowLatest] = useState(false)
+  const feedRef = useRef<HTMLDivElement | null>(null)
+  const followLatest = useRef(true)
+  const historyRequest = useRef(0)
+  const conversationRef = useRef(conversationId)
+  const sending = useRef(false)
+  const profileId = profile?.id
+  useEffect(() => { conversationRef.current = conversationId }, [conversationId])
   const newChatRequested = useRef(false)
 
   const reloadConversations = useCallback(async (all = auditAll) => {
@@ -98,23 +114,26 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
   }, [auditAll, profile])
 
   const loadConversation = useCallback(async (id: string) => {
+    const request = ++historyRequest.current
     setLoadingHistory(true)
     setError(null)
     try {
       const content = await aiService.getConversation(id)
+      if (request !== historyRequest.current) return
+      followLatest.current = true
       setConversationId(id)
       setMessages(content.messages)
       setProposals(content.proposals)
       setHistoryOpen(false)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Could not load this conversation.')
+      if (request === historyRequest.current) setError(loadError instanceof Error ? loadError.message : 'Could not load this conversation.')
     } finally {
-      setLoadingHistory(false)
+      if (request === historyRequest.current) setLoadingHistory(false)
     }
   }, [])
 
   useEffect(() => {
-    if (!open || !profile) return
+    if (!open || !profileId) return
     document.body.classList.add('copilot-open')
     let active = true
     const load = async () => {
@@ -122,14 +141,14 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
       try {
         const [nextSettings, nextUsage, nextConversations] = await Promise.all([
           aiService.getSettings(),
-          aiService.getUsage(profile.id),
-          aiService.listConversations(profile.id, false)
+          aiService.getUsage(profileId),
+          aiService.listConversations(profileId, false)
         ])
         if (!active) return
         setSettings(nextSettings)
         setUsage(nextUsage)
         setConversations(nextConversations)
-        if (!conversationId && !newChatRequested.current && nextConversations[0]) await loadConversation(nextConversations[0].id)
+        if (!conversationRef.current && !newChatRequested.current && nextConversations[0]) await loadConversation(nextConversations[0].id)
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'The copilot database is not ready.')
       } finally {
@@ -141,13 +160,22 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
       active = false
       document.body.classList.remove('copilot-open')
     }
-  }, [conversationId, loadConversation, open, profile])
+  }, [loadConversation, open, profileId])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [loading, messages, proposals])
+    if (!open || !followLatest.current) return
+    const frame = requestAnimationFrame(() => {
+      const feed = feedRef.current
+      if (feed) feed.scrollTop = feed.scrollHeight
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [loading, messages, proposals, streamingText, open])
 
   const newConversation = () => {
+    if (sending.current) return
+    historyRequest.current++
+    followLatest.current = true
+    setLoadingHistory(false)
     newChatRequested.current = true
     setConversationId(null)
     setMessages([])
@@ -159,7 +187,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
 
   const sendMessage = async (text = input) => {
     const clean = text.trim()
-    if (!clean || loading || !profile) return
+    if (!clean || sending.current || loadingHistory || !profile) return
     if (!settings?.enabled) {
       setError(null)
       return
@@ -167,8 +195,12 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
     setInput('')
     setError(null)
     setLoading(true)
+    sending.current = true
+    followLatest.current = true
+    setProgress('Checking live records…')
+    const localId = `local-${crypto.randomUUID()}`
     setMessages((current) => [...current, {
-      id: `local-${crypto.randomUUID()}`,
+      id: localId,
       conversation_id: conversationId ?? 'new',
       sender: 'user',
       content: clean,
@@ -177,20 +209,21 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
     try {
       const response = await aiService.streamMessage(conversationId, clean, (text) => {
         setStreamingText(text)
-      })
+      }, setProgress)
       setStreamingText(null)
       setConversationId(response.message.conversation_id)
       if (response.usage) setUsage(response.usage)
-      const content = await aiService.getConversation(response.message.conversation_id)
-      setMessages(content.messages)
-      setProposals(content.proposals)
-      await reloadConversations(false)
+      setMessages(current => [...current, response.message])
+      setProposals(current => [...current, ...response.proposals])
+      void reloadConversations(false).catch(() => {})
     } catch (sendError) {
       setStreamingText(null)
-      setMessages((current) => current.filter((item) => !item.id.startsWith('local-')))
+      setMessages((current) => current.filter((item) => item.id !== localId))
+      setInput(clean)
       setError(sendError instanceof Error ? sendError.message : 'The copilot could not answer.')
     } finally {
       setLoading(false)
+      sending.current = false
       // Refresh provider health badge after every call (success or failure)
       aiService.getSettings().then(setSettings).catch(() => {})
     }
@@ -390,6 +423,11 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
     }
   }
 
+  const copyAnswer = async (content: string) => {
+    try { await navigator.clipboard.writeText(content); showToast({ type: 'success', title: 'Answer copied' }) }
+    catch { showToast({ type: 'error', title: 'Could not copy. Select the answer text to copy it.' }) }
+  }
+
   if (!open || !profile) return null
   return (
     <div className="copilot-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -399,7 +437,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
             <strong><History size={16} /> Conversations</strong>
             <IconButton label="Close history" onClick={() => setHistoryOpen(false)}><ChevronLeft size={18} /></IconButton>
           </div>
-          <Button className="copilot-new" variant="secondary" icon={<MessageSquarePlus size={16} />} onClick={newConversation}>New chat</Button>
+          <Button className="copilot-new" variant="secondary" disabled={loading} icon={<MessageSquarePlus size={16} />} onClick={newConversation}>New chat</Button>
           {profile.role === 'founder' && (
             <label className="copilot-audit-toggle">
               <input type="checkbox" checked={auditAll} onChange={async (event) => {
@@ -418,11 +456,11 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
           <div className="copilot-history-list">
             {conversations.map((conversation) => (
               <div key={conversation.id} className={cn(conversation.id === conversationId && 'active')}>
-                <button onClick={() => void loadConversation(conversation.id)}>
+                <button disabled={loading} onClick={() => void loadConversation(conversation.id)}>
                   <strong>{conversation.title}</strong>
                   <span>{conversation.owner?.full_name && auditAll ? `${conversation.owner.full_name} · ` : ''}{fromNow(conversation.updated_at)}</span>
                 </button>
-                <IconButton label="Delete conversation" onClick={() => void deleteConversation(conversation)}><Trash2 size={14} /></IconButton>
+                <IconButton label="Delete conversation" disabled={loading} onClick={() => void deleteConversation(conversation)}><Trash2 size={14} /></IconButton>
               </div>
             ))}
             {!conversations.length && <p>No saved conversations yet.</p>}
@@ -443,7 +481,11 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
             <IconButton label="Close copilot" onClick={onClose}><X size={20} /></IconButton>
           </header>
 
-          <div className="copilot-feed">
+          <div className="copilot-feed" ref={feedRef} onScroll={event => {
+            const feed = event.currentTarget
+            followLatest.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 90
+            setShowLatest(!followLatest.current)
+          }}>
             {loadingHistory && !messages.length ? <div className="copilot-loading"><LoaderCircle className="animate-spin" size={23} /> Loading secure history…</div>
               : !messages.length ? (
                 <div className="copilot-welcome">
@@ -470,7 +512,7 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
                   {messages.map((message) => (
                     <article key={message.id} className={cn('copilot-message', message.sender)}>
                       <span>{message.sender === 'assistant' ? <Sparkles size={15} /> : profile.full_name.charAt(0).toUpperCase()}</span>
-                      <div><p>{message.content}</p><small>{fromNow(message.created_at)}{message.model ? ` · ${message.model}` : ''}</small></div>
+                      <div>{message.sender === 'assistant' ? <CopilotAnswer content={message.content}/> : <p>{message.content}</p>}<div className="copilot-message-meta"><small>{fromNow(message.created_at)}{message.model === 'verified-expense-report' ? ' · Verified expense report' : message.model ? ' · Operations Copilot' : ''}</small>{message.sender === 'assistant' && <IconButton label="Copy answer" onClick={() => void copyAnswer(message.content)}><Copy size={14}/></IconButton>}</div></div>
                     </article>
                   ))}
                   {visibleProposals.map((proposal) => (
@@ -484,35 +526,36 @@ export function CopilotDrawer({ open, onClose }: { open: boolean; onClose(): voi
                       onCancel={() => void cancelProposal(proposal)}
                     />
                   ))}
-                  {loading && !streamingText && <article className="copilot-message assistant thinking"><span><Sparkles size={15} /></span><div><LoaderCircle className="animate-spin" size={17} /><p>Checking the permitted records…</p></div></article>}
+                  {loading && !streamingText && <article className="copilot-message assistant thinking" role="status"><span><Sparkles size={15} /></span><div><LoaderCircle className="animate-spin" size={17} /><p>{progress}</p></div></article>}
                   {streamingText && (
                     <article className="copilot-message assistant">
                       <span><Sparkles size={15} /></span>
-                      <div><p>{streamingText}</p></div>
+                      <div><CopilotAnswer content={streamingText}/></div>
                     </article>
                   )}
                 </div>
               )}
             {error && <div className="copilot-error"><AlertTriangle size={17} /><span>{error}</span></div>}
-            <div ref={endRef} />
+            {showLatest && <button className="copilot-latest" onClick={() => { followLatest.current = true; setShowLatest(false); const feed = feedRef.current; if (feed) feed.scrollTo({ top: feed.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }) }}><ArrowDown size={15}/>Latest message</button>}
           </div>
 
           <footer className="copilot-composer">
             <textarea
+              aria-label="Message Operations Copilot"
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault()
                   void sendMessage()
                 }
               }}
-              disabled={loading || !settings?.enabled}
+              disabled={loading || loadingHistory || !settings?.enabled}
               rows={2}
               maxLength={4000}
               placeholder={settings?.enabled ? 'Ask in English, Malayalam, or Manglish…' : 'Enable the copilot in Founder settings first.'}
             />
-            <IconButton label="Send message" disabled={loading || !input.trim() || !settings?.enabled} onClick={() => void sendMessage()}><Send size={18} /></IconButton>
+            <IconButton label="Send message" disabled={loading || loadingHistory || !input.trim() || !settings?.enabled} onClick={() => void sendMessage()}><Send size={18} /></IconButton>
             <small>AI can make mistakes. Verify business details before confirming.</small>
           </footer>
         </div>

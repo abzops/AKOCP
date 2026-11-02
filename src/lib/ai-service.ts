@@ -114,7 +114,8 @@ export const aiService = {
   async streamMessage(
     conversationId: string | null,
     message: string,
-    onChunk: (text: string) => void
+    onChunk: (text: string) => void,
+    onStatus?: (status: string) => void
   ) {
     const { data: sessionData } = await supabase.auth.getSession()
     const token = sessionData.session?.access_token
@@ -146,11 +147,13 @@ export const aiService = {
     const decoder = new TextDecoder("utf-8")
     let buffer = ""
     let finalData: AiCopilotResponse | null = null
+    let text = ''
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
+      buffer = buffer.replace(/\r\n/g, '\n')
       
       let boundary = buffer.indexOf("\n\n")
       while (boundary !== -1) {
@@ -165,7 +168,10 @@ export const aiService = {
         try {
           const payload = JSON.parse(dataStr)
           if (payload.type === "chunk" && payload.content) {
-            onChunk(payload.content)
+            text += payload.content
+            onChunk(text)
+          } else if (payload.type === 'status' && typeof payload.message === 'string') {
+            onStatus?.(payload.message)
           } else if (payload.type === "done") {
             finalData = payload as unknown as AiCopilotResponse
           } else if (payload.type === "error") {

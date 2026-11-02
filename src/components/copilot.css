@@ -1,0 +1,41 @@
+.copilot-drawer{width:min(1080px,calc(100vw - 32px))}
+.copilot-feed{position:relative;overflow-anchor:none}
+.copilot-messages{max-width:760px;gap:22px}
+.copilot-message>div{min-width:0;max-width:92%;padding:15px 17px;gap:10px}
+.copilot-message.user>div{max-width:85%}
+.copilot-message p,.copilot-answer{font-size:14px;line-height:1.75}
+.copilot-answer{min-width:0;overflow-wrap:anywhere;color:var(--text-soft)}
+.copilot-answer p{white-space:normal;margin:0 0 12px}
+.copilot-answer>:last-child{margin-bottom:0}
+.copilot-answer h1,.copilot-answer h2,.copilot-answer h3,.copilot-answer h4{font-size:15px;line-height:1.5;margin:15px 0 9px;color:var(--text)}
+.copilot-answer>:first-child{margin-top:0}
+.copilot-answer strong{font-weight:700;color:var(--text)}
+.copilot-answer ul,.copilot-answer ol{padding-left:21px;margin:8px 0 13px}
+.copilot-answer li{margin:5px 0}
+.copilot-answer li>p{margin-bottom:3px}
+.copilot-answer a{color:var(--brand);text-decoration:underline;text-underline-offset:3px}
+.copilot-answer code{font-size:.9em;white-space:pre-wrap;background:var(--surface-soft);padding:2px 5px;border-radius:4px}
+.copilot-answer pre{max-width:100%;overflow-x:auto;background:var(--surface-soft);border-radius:8px;padding:12px}
+.copilot-answer pre code{white-space:pre;padding:0}
+.copilot-answer blockquote{border-left:2px solid var(--brand-border);padding-left:12px;color:var(--muted-strong);margin:12px 0}
+.copilot-table{max-width:100%;overflow-x:auto;margin:12px 0;border:1px solid var(--border);border-radius:8px}
+.copilot-table table{width:100%;border-collapse:collapse;font-size:13px}
+.copilot-table th,.copilot-table td{white-space:normal;padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);line-height:1.6;min-width:90px}
+.copilot-table th{background:var(--surface-soft);font-weight:650}
+.copilot-message .copilot-message-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.copilot-message-meta small{font-size:10px;line-height:1.5}
+.copilot-message-meta .icon-btn{width:32px;height:32px;min-width:32px;color:var(--muted);border:0}
+.copilot-header strong{font-size:15px}.copilot-header small{font-size:11px}
+.copilot-header .icon-btn{min-width:44px;min-height:44px}
+.copilot-history-list strong{font-size:12px}.copilot-history-list span{font-size:10px}
+.copilot-history-list button:disabled{opacity:.5;cursor:wait}
+.copilot-message.thinking p{font-size:13px}
+.copilot-composer{grid-template-columns:minmax(0,1fr) 46px}
+.copilot-composer textarea{font-size:16px;min-height:62px;resize:none;transition:border-color 140ms ease}
+.copilot-composer>.icon-btn{width:46px;height:46px}
+.copilot-composer>small{font-size:10px;line-height:1.5}
+.copilot-welcome>p{font-size:14px}.copilot-welcome button{font-size:13px;min-height:62px}
+.copilot-error span{font-size:13px}
+.copilot-latest{position:sticky;bottom:8px;margin:12px auto 0;display:flex;align-items:center;gap:7px;padding:10px 14px;min-height:44px;border:1px solid var(--brand-border);border-radius:24px;background:var(--surface-raised);box-shadow:var(--shadow);color:var(--text);font-size:12px;z-index:2}
+@media(max-width:760px){.copilot-drawer{width:100vw}.copilot-message>div{max-width:calc(100% - 36px);padding:12px}.copilot-header{gap:6px}.copilot-header>.copilot-logo{display:none}.copilot-message-meta .icon-btn{width:44px;height:44px}.copilot-feed{padding:15px 10px}.copilot-messages{gap:18px}}
+@media(prefers-reduced-motion:reduce){.copilot-drawer,.copilot-history,.copilot-composer textarea{animation:none;transition:none}.copilot-feed{scroll-behavior:auto}}
