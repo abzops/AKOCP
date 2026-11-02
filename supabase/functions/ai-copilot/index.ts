@@ -2,7 +2,7 @@ import {
   createClient,
   type SupabaseClient,
 } from "https://esm.sh/@supabase/supabase-js@2.110.5";
-import { businessClock, requestedPeriods, reportPeriod, summarizeExpenses, expenseAnswer, type Period } from './context.ts';
+import { businessClock, requestedPeriods, reportPeriod, summarizeExpenses, expenseAnswer, readableAnswer, type Period } from './context.ts';
 
 type Role = "founder" | "operations";
 type Json = Record<string, unknown>;
@@ -1198,14 +1198,14 @@ export async function runCopilot(
       tools,
       Number(settings.max_output_tokens),
       !isFinalRound,
-      onChunk,
+      onChunk && (text => onChunk(readableAnswer(text, question))),
     );
     inputTokens += response.usage.prompt_tokens ?? 0;
     outputTokens += response.usage.completion_tokens ?? 0;
     activeModel = response.model;
     fallbackUsed ||= response.fallbackUsed;
     const toolCalls = response.message.tool_calls ?? [];
-    finalContent = response.message.content?.trim() ?? "";
+    finalContent = readableAnswer(response.message.content ?? '', question).trim();
 
     if (!toolCalls.length || isFinalRound) break;
 

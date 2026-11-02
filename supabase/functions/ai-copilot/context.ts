@@ -77,3 +77,13 @@ export function expenseAnswer(message: string, report: ReturnType<typeof summari
   const categories = report.categories.map(item => `- ${item.category.replaceAll('_', ' ')}: **${money(item.amount)}**`).join('\n');
   return `**Approved expenses: ${money(report.approved)}**\n\n${report.label}: **${report.from} to ${report.to}** (India time). Based on expense dates.\n\n${categories || 'No approved expenses were recorded for these dates.'}\n\nPending approval: **${money(report.pending)}**. Rejected: **${money(report.rejected)}**.\n\n_Checked live expense records. Pending and rejected amounts are excluded from the approved total; wallet deductions can occur on a different date._`;
 }
+
+export function readableAnswer(content: string, question: string) {
+  if (/\buuid\b|\b(?:proof|payment|order|record|customer)\s+ids?\b/i.test(question)) return content;
+  const dash = '[-\\u2010-\\u2015]';
+  const uuid = `[a-f\\d]{8}${dash}[a-f\\d]{4}${dash}[a-f\\d]{4}${dash}[a-f\\d]{4}${dash}[a-f\\d]{12}`;
+  return content
+    .replace(new RegExp(`(?:[–-]\\s*)?(?:proof|payment|order|record|customer|track|service)\\s+(?:id|uuid)\\s*[:：]?\\s*\u0060?${uuid}\u0060?`, 'gi'), '')
+    .replace(new RegExp(`(?<![=/])\u0060?${uuid}\u0060?`, 'gi'), 'internal record')
+    .replace(/[ \t]+[–-][ \t]*(?=\n|$)/g, '');
+}

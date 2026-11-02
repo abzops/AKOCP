@@ -10,7 +10,7 @@ import {
   runCopilot,
   systemPrompt,
 } from "./index.ts";
-import { businessClock, requestedPeriods, reportPeriod, summarizeExpenses, expenseAnswer } from './context.ts';
+import { businessClock, requestedPeriods, reportPeriod, summarizeExpenses, expenseAnswer, readableAnswer } from './context.ts';
 import {
   assert,
   assertEquals,
@@ -38,6 +38,14 @@ Deno.test('India clock resolves last month from the live date, across years and 
   assertEquals(businessClock(new Date('2026-11-01T20:00:00Z')).today, '2026-11-02');
   assertEquals(clock.periods.last_week.from, '2026-10-26');
   assertEquals(clock.periods.last_week.to, '2026-11-01');
+});
+
+Deno.test('readable answers omit unsolicited internal IDs but retain order numbers and requested IDs', () => {
+  const answer = 'Rashee – AK-261025-012 (₹350) – proof ID `78e8c920-ad0b-4e6c-8e3c-3a91c33332a5`';
+  assertEquals(readableAnswer(answer, 'summarize pending payment proofs').trim(), 'Rashee – AK-261025-012 (₹350)');
+  assertEquals(readableAnswer('Approved ', 'expenses'), 'Approved ');
+  assertEquals(readableAnswer(answer.replaceAll('-', '‑'), 'pending proofs').includes('78e8c920'), false);
+  assertEquals(readableAnswer(answer, 'show the proof ID'), answer);
 });
 
 Deno.test('latest relative dates override hallucinated dates in model tool arguments', () => {
