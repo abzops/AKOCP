@@ -123,13 +123,20 @@ async function capture(database:DB,body:Payload){
 async function ended(database:DB,body:Payload){
  const interaction=str(body.interaction_id,160),caller=phone(body.user_phone_number)
  if(interaction.length<4||!caller)return respond({error:'Invalid call-end event'},422)
- const vars=body.agent_variables&&typeof body.agent_variables==='object'?body.agent_variables as Payload:{}
+ const vars=body.final_agent_variables&&typeof body.final_agent_variables==='object'?body.final_agent_variables as Payload:
+  body.output_agent_variables&&typeof body.output_agent_variables==='object'?body.output_agent_variables as Payload:{}
  const choice=vars.recording_consent
  const consent=choice===true||choice==='yes'||choice==='granted'?'granted':
   choice===false||choice==='no'||choice==='declined'?'declined':'unknown'
  const numeric=Number(body.duration)
  const duration=Number.isFinite(numeric)?Math.max(0,Math.min(7200,Math.trunc(numeric))):0
- const transcript=consent==='granted'&&typeof body.transcript==='string'?safe(body.transcript,30000):null
+ const turns=Array.isArray(body.interaction_transcript)?body.interaction_transcript:[]
+ const permittedTurns=turns.slice(0,300).filter((t):t is Payload=>Boolean(t)&&typeof t==='object'&&!Array.isArray(t))
+ const transcript=consent==='granted'
+  ?permittedTurns.map(t=>{
+    const role=t.role==='user'?'Customer':'Receptionist'
+    return role+': '+safe(t.indic_text||t.en_text,1000)
+   }).join('\n').slice(0,30000)||null:null
  const result=await database.from('receptionist_calls').upsert({
   interaction_id:interaction,caller_phone:caller,agent_phone:phone(body.agent_phone_number),
   duration_seconds:duration,end_reason:safe(body.end_reason,100)||null,
