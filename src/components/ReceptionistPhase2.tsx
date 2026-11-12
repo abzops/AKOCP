@@ -6,6 +6,7 @@ import { useAppData } from '../context/AppDataContext'
 import { supabase } from '../lib/supabase'
 import { Button } from './ui'
 import type { InventoryTrack } from '../types'
+import '../receptionist-phase2.css'
 
 export type VerifiedVoiceRequest = {
  id:string; customer_name:string|null; song_title:string; song_language:string|null;
