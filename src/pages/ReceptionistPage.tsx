@@ -5,6 +5,7 @@ import { Button, PageHeader } from '../components/ui'
 import { supabase } from '../lib/supabase'
 import { useAppData } from '../context/AppDataContext'
 import { EnquiryOrderActions, PrivateCallRecording, ReceptionistInventoryVerification } from '../components/ReceptionistPhase2'
+import { ReceptionistSetupStatus } from '../components/ReceptionistSetupStatus'
 import { malayalamOrderDraft, whatsappDigits, whatsappDraftUrl, type KaraokeFormat } from '../lib/receptionist-core'
 import '../receptionist.css'
 
@@ -77,6 +78,7 @@ export function ReceptionistPage(){
   </section>
   {notice&&<div className="ak-voice-notice" role="status">{notice} <button aria-label="Dismiss" onClick={()=>setNotice(null)}>×</button></div>}
   {error&&<div className="ak-voice-error" role="alert">{error}</div>}
+  <ReceptionistSetupStatus/>
   <ReceptionistInventoryVerification/>
   <section className="ak-voice-section">
    <header className="ak-voice-section-heading"><div><h2>Call enquiries</h2><p>Review each request before creating an order.</p></div>
