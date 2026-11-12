@@ -82,7 +82,12 @@ begin
  set song_language=chosen, language_status=case when service_code='EX250' then 'verified_inventory' else 'owner_verified' end,
      stock_status=case when service_code='EX250' then 'available' else 'not_available' end,
      inventory_track_id=case when service_code='EX250' then inventory_track_id else null end,
-     quote_amount=quoted, quote_status='verified', reviewed_by=auth.uid(), reviewed_at=now(), updated_at=now()
+     quote_amount=quoted, quote_status='verified',
+     -- If the owner-verified amount is different from the quoted amount heard on the call,
+     -- the earlier consent is invalid; require the customer to explicitly approve the new price.
+     caller_approved=case when r.quote_amount=quoted then r.caller_approved else false end,
+     approval_utterance=case when r.quote_amount=quoted then r.approval_utterance else null end,
+     reviewed_by=auth.uid(), reviewed_at=now(), updated_at=now()
  where id=p_request_id returning * into r;
  return r;
 end;
