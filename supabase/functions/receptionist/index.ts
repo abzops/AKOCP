@@ -1,6 +1,7 @@
 // Supabase Edge Function for Sarvam Voice Agent. Secrets NEVER in frontend code.
 // verify_jwt=false for this function only. Each request checks an independent token.
 import { createClient } from 'npm:@supabase/supabase-js@2.110.5'
+import { matchesSpokenPrice } from './validation.ts'
 
 type Payload = Record<string, unknown>
 type Format = 'audio' | 'video'
@@ -100,6 +101,12 @@ async function capture(database:DB,body:Payload){
  if(stock!=='available'){
   const custom=await quote(database,format,language)
   if(custom.status==='quoted' && typeof custom.amount_inr==='number'){amount=custom.amount_inr;quoteStatus=custom.provisional?'provisional':'verified'}
+ }
+ // An LLM cannot approve a quotation simply by setting caller_approved=true.
+ // The trusted price must match the exact rupee amount read to and accepted by the caller.
+ if(!matchesSpokenPrice(approved,body.quoted_price_inr,amount)){
+  return respond({status:'price_reconfirmation_required',expected_price_inr:amount,
+   instruction:'Do not claim the enquiry was saved. State the verified price and request explicit approval. Retry capture with quoted_price_inr equal to that price; if no price is available, offer owner callback.'})
  }
  const call=await database.from('receptionist_calls')
   .upsert({interaction_id:interaction,caller_phone:caller},{onConflict:'interaction_id'}).select('id').single()
