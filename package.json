@@ -10,7 +10,7 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:db": "node scripts/test-database.mjs",
-    "test:edge": "deno test --allow-env --allow-net supabase/functions/ai-copilot/index_test.ts",
+    "test:edge": "deno test --allow-env --allow-net supabase/functions/ai-copilot/index_test.ts supabase/functions/receptionist/validation_test.ts",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0"
   },
