@@ -211,6 +211,7 @@ try {
   })
   check('Operations cannot promote AI leads to orders or verify prices',()=>{})
   await asUser(founder,async()=>{
+    await assert.rejects(()=>db.query("select public.receptionist_create_order($1,'Voice Customer','')",[verifiedLead]),/Founder must verify/)
     await db.query("select public.receptionist_verify_quote($1,'Malayalam',false)",[verifiedLead])
     assert.equal(Number(await scalar('select quote_amount from receptionist_requests where id=$1',[verifiedLead])),285)
     await db.query("select public.receptionist_verify_quote($1,'Tamil',true)",[customLead])
