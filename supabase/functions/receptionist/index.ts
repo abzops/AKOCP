@@ -34,8 +34,8 @@ async function tokenOK(given:string, expected:string|undefined){
 async function lookup(database:DB,body:Payload){
  const query=safe(body.query,100),format=formatOf(body.format)
  if(query.length<2||!format)return respond({error:'Song query and audio/video format required'},422)
- const {data,error}=await database.rpc('search_inventory',{
-  p_query:query,p_language:null,p_sort:'orders',p_cursor_value:null,p_cursor_id:null,p_limit:6
+ const {data,error}=await database.rpc('receptionist_search_inventory',{
+  p_query:query,p_limit:6
  })
  if(error)throw error
  const matches=(data??[]) as Array<{id:string;track_name:string;english_title:string|null;malayalam_title:string|null;language:string}>
@@ -99,7 +99,7 @@ async function capture(database:DB,body:Payload){
  }
  if(stock!=='available'){
   const custom=await quote(database,format,language)
-  if(custom.status==='quoted'){amount=custom.amount_inr;quoteStatus=custom.provisional?'provisional':'verified'}
+  if(custom.status==='quoted' && typeof custom.amount_inr==='number'){amount=custom.amount_inr;quoteStatus=custom.provisional?'provisional':'verified'}
  }
  const call=await database.from('receptionist_calls')
   .upsert({interaction_id:interaction,caller_phone:caller},{onConflict:'interaction_id'}).select('id').single()

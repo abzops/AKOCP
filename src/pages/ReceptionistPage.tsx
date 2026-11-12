@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, PageHeader } from '../components/ui'
 import { supabase } from '../lib/supabase'
+import { useAppData } from '../context/AppDataContext'
+import { EnquiryOrderActions, PrivateCallRecording, ReceptionistInventoryVerification } from '../components/ReceptionistPhase2'
 import { malayalamOrderDraft, whatsappDigits, whatsappDraftUrl, type KaraokeFormat } from '../lib/receptionist-core'
 import '../receptionist.css'
 
@@ -13,13 +15,14 @@ type Call = {
 type Request = {
  id:string;call_id:string;item_number:number;customer_name:string|null;song_title:string;
  song_language:string|null;karaoke_format:KaraokeFormat;stock_status:'not_verified'|'available'|'not_available';
- quote_amount:number|null;quote_status:'pending'|'provisional'|'verified';caller_approved:boolean;
+ quote_amount:number|null;quote_status:'pending'|'provisional'|'verified';caller_approved:boolean;approval_utterance:string|null;
  whatsapp_phone:string|null;whatsapp_confirmed_by_caller:boolean;review_status:'new'|'reviewed'|'rejected';
  linked_order_id:string|null;created_at:string
 }
 const callTime=(value:string)=>new Date(value).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Kolkata'})
 const money=(value:number|null)=>value==null?'Price pending':'₹'+Number(value).toLocaleString('en-IN')
 export function ReceptionistPage(){
+ const {snapshot,refresh}=useAppData()
  const [calls,setCalls]=useState<Call[]>([])
  const [requests,setRequests]=useState<Request[]>([])
  const [busy,setBusy]=useState(true)
@@ -32,7 +35,7 @@ export function ReceptionistPage(){
   setBusy(true);setError(null)
   const [c,r]=await Promise.all([
    supabase.from('receptionist_calls').select('id,interaction_id,caller_phone,created_at,duration_seconds,transcript,recording_consent,recording_reference').order('created_at',{ascending:false}).limit(150),
-   supabase.from('receptionist_requests').select('id,call_id,item_number,customer_name,song_title,song_language,karaoke_format,stock_status,quote_amount,quote_status,caller_approved,whatsapp_phone,whatsapp_confirmed_by_caller,review_status,linked_order_id,created_at').order('created_at',{ascending:false}).limit(300)
+   supabase.from('receptionist_requests').select('id,call_id,item_number,customer_name,song_title,song_language,karaoke_format,stock_status,quote_amount,quote_status,caller_approved,approval_utterance,whatsapp_phone,whatsapp_confirmed_by_caller,review_status,linked_order_id,created_at').order('created_at',{ascending:false}).limit(300)
   ])
   if(c.error||r.error)setError('Receptionist tables are not ready. Apply the migration to the AKOCP Supabase database; no existing orders have been changed.')
   else{setCalls((c.data??[]) as Call[]);setRequests((r.data??[]) as Request[])}
@@ -74,6 +77,7 @@ export function ReceptionistPage(){
   </section>
   {notice&&<div className="ak-voice-notice" role="status">{notice} <button aria-label="Dismiss" onClick={()=>setNotice(null)}>×</button></div>}
   {error&&<div className="ak-voice-error" role="alert">{error}</div>}
+  <ReceptionistInventoryVerification/>
   <section className="ak-voice-section">
    <header className="ak-voice-section-heading"><div><h2>Call enquiries</h2><p>Review each request before creating an order.</p></div>
     <label className="ak-voice-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Song, caller, language…" aria-label="Search call enquiries"/></label></header>
@@ -81,7 +85,8 @@ export function ReceptionistPage(){
    <div className="ak-voice-list">{visible.map(r=>{
     const call=byId.get(r.call_id)
     const editable=phoneEdits[r.id]??r.whatsapp_phone??''
-    const message=malayalamOrderDraft({customer:r.customer_name,song:r.song_title,format:r.karaoke_format,price:r.quote_amount,confirmed:r.caller_approved})
+    const linked=snapshot?.orders.find(order=>order.id===r.linked_order_id)
+    const message=malayalamOrderDraft({customer:r.customer_name,song:r.song_title,format:r.karaoke_format,price:r.quote_amount,confirmed:Boolean(r.linked_order_id),orderNumber:linked?.order_number})
     const whatsapp=whatsappDraftUrl(r.whatsapp_phone,message)
     return <article key={r.id} className="ak-voice-row">
      <div className="ak-voice-main">
@@ -94,8 +99,9 @@ export function ReceptionistPage(){
        <Link className="ak-voice-link" to="/orders?new=1"><ClipboardList size={16}/> Open order form</Link>
        {r.review_status==='new'&&<Button variant="ghost" disabled={saving===r.id} onClick={()=>void updateReview(r)}>Mark reviewed</Button>}
       </div>
+      <EnquiryOrderActions request={r} onChanged={async()=>{await load();await refresh()}}/>
      </div>
-     <aside className="ak-voice-side"><strong>Call record</strong><span>{call?Math.floor(call.duration_seconds/60)+'m '+call.duration_seconds%60+'s':'Not received'}</span><span>{call?.recording_consent==='declined'?<><MicOff size={13}/> Recording declined</>:call?.recording_consent==='granted'?'Consent recorded':'Recording consent unknown'}</span>{call?.transcript?<details><summary>Read transcript</summary><p>{call.transcript}</p></details>:<small>Recording audio playback will require a private Sarvam retrieval proxy.</small>}</aside>
+     <aside className="ak-voice-side"><strong>Call record</strong><span>{call?Math.floor(call.duration_seconds/60)+'m '+call.duration_seconds%60+'s':'Not received'}</span><span>{call?.recording_consent==='declined'?<><MicOff size={13}/> Recording declined</>:call?.recording_consent==='granted'?'Consent recorded':'Recording consent unknown'}</span>{call?.transcript&&<details><summary>Read transcript</summary><p>{call.transcript}</p></details>}{call&&<PrivateCallRecording callId={call.id} consent={call.recording_consent} reference={call.recording_reference}/>}</aside>
     </article>
    })}</div>}
   </section>
