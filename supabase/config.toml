@@ -13,3 +13,7 @@ verify_jwt = false
 # Session-authenticated private audio proxy; never accepts Sarvam keys from client.
 [functions.receptionist-recording]
 verify_jwt = true
+
+# Founder-only readiness endpoint; never exposes secret values.
+[functions.receptionist-status]
+verify_jwt = true
