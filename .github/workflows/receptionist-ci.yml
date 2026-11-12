@@ -2,8 +2,6 @@ name: AKOCP feature checks
 on:
   pull_request:
     branches: [master]
-  push:
-    branches: [feat/sarvam-receptionist]
 permissions:
   contents: read
 jobs:
