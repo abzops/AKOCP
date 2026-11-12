@@ -1,7 +1,7 @@
 import {
   createClient,
   type SupabaseClient,
-} from "https://esm.sh/@supabase/supabase-js@2.110.5";
+} from "npm:@supabase/supabase-js@2.110.5";
 import { businessClock, requestedPeriods, reportPeriod, summarizeExpenses, expenseAnswer, readableAnswer, type Period } from './context.ts';
 
 type Role = "founder" | "operations";
