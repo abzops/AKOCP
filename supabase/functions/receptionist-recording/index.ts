@@ -45,7 +45,7 @@ Deno.serve(async(request:Request)=>{
   if(call.recording_consent!=='granted'||call.recording_reference!==call.interaction_id)
    return json('This recording is not available for playback',403)
   // Sarvam interaction_id must contain a date prefix and slash (e.g. 20261007/uuid).
-  if(!/^[0-9]{8}\/[a-zA-Z0-9_-]{4,128}$/.test(call.interaction_id))
+  if(!/^[0-9]{8}\/[a-zA-Z0-9_:-]{4,128}$/.test(call.interaction_id))
    return json('Recording reference is not valid',400)
   const org=Deno.env.get('SARVAM_ORG_ID')??''
   const workspace=Deno.env.get('SARVAM_WORKSPACE_ID')??''
