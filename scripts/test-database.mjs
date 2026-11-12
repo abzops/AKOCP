@@ -234,6 +234,15 @@ try {
   assert.equal(await scalar("select has_function_privilege('anon','public.receptionist_create_order(uuid,text,text)','execute')"),false)
   assert.equal(await scalar("select has_function_privilege('anon','public.receptionist_verify_quote(uuid,text,boolean)','execute')"),false)
   check('Voice order conversion RPCs are not public or anonymous',()=>{})
+  await db.exec('set role service_role')
+  try {
+    const hits=(await db.query("select track_name from public.search_inventory('Voice Test Malayalam',null,'orders',null,null,5)")).rows
+    assert.ok(hits.some(x=>x.track_name==='Voice Test Malayalam'))
+    const serverReads=await scalar('select count(*)::int from receptionist_calls')
+    assert.ok(serverReads>=1)
+  } finally { await db.exec('reset role') }
+  check('Service role can perform authorized voice inventory lookup and call storage while anonymous clients remain blocked',()=>{})
+
 
   let instalmentOrder,firstReceipt,secondReceipt
   await asUser(operations,async()=>{
