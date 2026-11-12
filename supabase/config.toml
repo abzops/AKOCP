@@ -5,3 +5,7 @@ verify_jwt = true
 
 [functions.customer-privacy-purge]
 verify_jwt = true
+
+# Only this endpoint uses independent bearer and webhook tokens.
+[functions.receptionist]
+verify_jwt = false
