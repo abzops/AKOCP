@@ -144,7 +144,7 @@ begin
  if not r.caller_approved or char_length(trim(coalesce(r.approval_utterance,'')))<2
  then raise exception 'Customer did not explicitly approve this request'; end if;
  if r.review_status='rejected' then raise exception 'Rejected enquiries cannot be converted'; end if;
- if r.quote_status<>'verified' or r.quote_amount is null
+ if r.reviewed_by is null or r.reviewed_at is null or r.quote_status<>'verified' or r.quote_amount is null
    or r.language_status not in ('verified_inventory','owner_verified')
  then raise exception 'Founder must verify inventory, language and price before creating the order'; end if;
  select * into call_record from public.receptionist_calls where id=r.call_id;
