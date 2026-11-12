@@ -10,7 +10,7 @@ create or replace function public.receptionist_search_inventory(
  p_query text,
  p_limit integer default 6
 ) returns setof public.inventory_tracks
-language sql stable security invoker set search_path = '' as $
+language sql stable security invoker set search_path = '' as $voice$
  select t.*
  from public.inventory_tracks t
  where t.deleted_at is null
@@ -27,7 +27,7 @@ language sql stable security invoker set search_path = '' as $
           t.total_orders desc, t.id
  limit least(greatest(coalesce(p_limit,6),1),10);
 
-$;
+$voice$;
 revoke all on function public.receptionist_search_inventory(text,integer) from public,anon,authenticated;
 grant execute on function public.receptionist_search_inventory(text,integer) to service_role;
 grant select on public.receptionist_inventory_formats, public.inventory_tracks, public.services to service_role;
