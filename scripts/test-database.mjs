@@ -63,7 +63,14 @@ try {
   for (const name of migrations.filter((name) => name > hardening && name !== titleAliases)) await apply(`supabase/migrations/${name}`)
   const configured = await snapshot()
   const { ai_settings: oldSettings, ...oldBusiness } = reapplied
-  const { ai_settings: newSettings, ...newBusiness } = configured
+  const { ai_settings: newSettings,
+    receptionist_calls: freshCalls, receptionist_requests: freshRequests,
+    receptionist_inventory_formats: freshFormats, ...newBusiness } = configured
+  check('new receptionist tables start empty without importing or modifying business records', () => {
+    assert.deepEqual(freshCalls, [])
+    assert.deepEqual(freshRequests, [])
+    assert.deepEqual(freshFormats, [])
+  })
   check('model configuration preserves every business row', () => assert.deepEqual(newBusiness, oldBusiness))
   check('agent uses the supported NVIDIA model', () => assert.equal(newSettings[0].primary_model, 'nvidia/nemotron-3.5-lightning-30b-a3b'))
   await db.query("insert into auth.users(id,email,raw_user_meta_data) values ($1,'pending@example.test','{\"full_name\":\"Pending User\"}')", [pending])
