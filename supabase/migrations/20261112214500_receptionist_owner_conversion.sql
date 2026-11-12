@@ -4,8 +4,31 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '30s';
 
--- Only the trusted server role may invoke the existing read-only inventory search for voice calls.
-grant execute on function public.search_inventory(text,text,text,text,uuid,integer) to service_role;
+-- AKOCP's normal search_inventory function requires an active signed-in human.
+-- The voice endpoint uses a different, read-only RPC that cannot be invoked by users/anon.
+create or replace function public.receptionist_search_inventory(
+ p_query text,
+ p_limit integer default 6
+) returns setof public.inventory_tracks
+language sql stable security invoker set search_path = '' as $
+ select t.*
+ from public.inventory_tracks t
+ where t.deleted_at is null
+   and char_length(trim(coalesce(p_query,''))) between 2 and 100
+   and (
+      position(lower(trim(p_query)) in lower(t.track_name))>0
+      or position(lower(trim(p_query)) in lower(coalesce(t.english_title,'')))>0
+      or position(lower(trim(p_query)) in lower(coalesce(t.malayalam_title,'')))>0
+      or position(lower(trim(p_query)) in lower(array_to_string(t.tags,' ')))>0
+   )
+ order by case when lower(trim(p_query))=lower(t.track_name) then 0
+               when lower(trim(p_query))=lower(coalesce(t.english_title,'')) then 1
+               else 2 end,
+          t.total_orders desc, t.id
+ limit least(greatest(coalesce(p_limit,6),1),10);
+$;
+revoke all on function public.receptionist_search_inventory(text,integer) from public,anon,authenticated;
+grant execute on function public.receptionist_search_inventory(text,integer) to service_role;
 grant select on public.receptionist_inventory_formats, public.inventory_tracks, public.services to service_role;
 grant select, insert, update on public.receptionist_calls, public.receptionist_requests to service_role;
 
