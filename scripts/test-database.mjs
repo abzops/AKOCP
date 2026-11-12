@@ -240,7 +240,7 @@ try {
   check('Voice order conversion RPCs are not public or anonymous',()=>{})
   await db.exec('set role service_role')
   try {
-    const hits=(await db.query("select track_name from public.search_inventory('Voice Test Malayalam',null,'orders',null,null,5)")).rows
+    const hits=(await db.query("select track_name from public.receptionist_search_inventory('Voice Test Malayalam',5)")).rows
     assert.ok(hits.some(x=>x.track_name==='Voice Test Malayalam'))
     const serverReads=await scalar('select count(*)::int from receptionist_calls')
     assert.ok(serverReads>=1)
