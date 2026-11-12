@@ -11,6 +11,7 @@ import { PasswordRecoveryPage } from './pages/PasswordRecoveryPage'
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })))
 const OrdersPage = lazy(() => import('./pages/OrdersPage').then((module) => ({ default: module.OrdersPage })))
+const ReceptionistPage = lazy(() => import('./pages/ReceptionistPage').then((module) => ({ default: module.ReceptionistPage })))
 const InventoryPage = lazy(() => import('./pages/InventoryPage').then((module) => ({ default: module.InventoryPage })))
 const CustomersPage = lazy(() => import('./pages/CustomersPage').then((module) => ({ default: module.CustomersPage })))
 const FinancePage = lazy(() => import('./pages/FinancePage').then((module) => ({ default: module.FinancePage })))
@@ -41,6 +42,7 @@ function Workspace() {
       <Route element={<AppLayout />}>
         <Route index element={page(<DashboardPage />)} />
         <Route path="orders" element={page(<OrdersPage />)} />
+        <Route path="receptionist" element={page(<ReceptionistPage />)} />
         <Route path="inventory" element={page(<InventoryPage />)} />
         <Route path="customers" element={page(<CustomersPage />)} />
         <Route path="finance" element={page(<FinancePage />)} />

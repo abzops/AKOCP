@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Command,
   Download,
+  Headset,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -32,6 +33,7 @@ import { CopilotDrawer } from './CopilotDrawer'
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['founder', 'operations'] },
   { to: '/orders', label: 'Orders', icon: ClipboardList, roles: ['founder', 'operations'] },
+  { to: '/receptionist', label: 'AI Receptionist', icon: Headset, roles: ['founder', 'operations'] },
   { to: '/inventory', label: 'Inventory', icon: Music2, roles: ['founder', 'operations'] },
   { to: '/customers', label: 'Customers', icon: UsersRound, roles: ['founder', 'operations'] },
   { to: '/finance', label: 'Finance', icon: WalletCards, roles: ['founder', 'operations'] },
@@ -42,6 +44,7 @@ const navItems = [
 const pageTitles: Record<string, string> = {
   '/': 'Founder dashboard',
   '/orders': 'Order workspace',
+  '/receptionist': 'AI receptionist',
   '/inventory': 'Karaoke inventory',
   '/customers': 'Customers',
   '/finance': 'Wallet & finance',
