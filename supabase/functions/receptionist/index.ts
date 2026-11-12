@@ -8,7 +8,7 @@ const respond = (data: unknown, status=200) => new Response(JSON.stringify(data)
  status, headers:{'content-type':'application/json','cache-control':'no-store'}
 })
 const str=(value:unknown,max=200)=>typeof value==='string'?value.trim().slice(0,max):''
-const safe=(value:unknown,max=200)=>str(value,max).replace(/[\u0000-\u001f]/g,' ')
+const safe=(value:unknown,max=200)=>Array.from(str(value,max)).map(ch=>ch.charCodeAt(0)<32?' ':ch).join('')
 const phone=(value:unknown)=>{
  const s=str(value,25), digits=s.replace(/\D/g,'')
  if(/^[6-9]\d{9}$/.test(digits))return '+91'+digits
