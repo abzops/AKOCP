@@ -9,3 +9,7 @@ verify_jwt = true
 # Only this endpoint uses independent bearer and webhook tokens.
 [functions.receptionist]
 verify_jwt = false
+
+# Session-authenticated private audio proxy; never accepts Sarvam keys from client.
+[functions.receptionist-recording]
+verify_jwt = true
