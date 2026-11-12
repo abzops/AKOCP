@@ -26,6 +26,7 @@ language sql stable security invoker set search_path = '' as $
                else 2 end,
           t.total_orders desc, t.id
  limit least(greatest(coalesce(p_limit,6),1),10);
+
 $;
 revoke all on function public.receptionist_search_inventory(text,integer) from public,anon,authenticated;
 grant execute on function public.receptionist_search_inventory(text,integer) to service_role;
