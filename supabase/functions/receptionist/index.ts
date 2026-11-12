@@ -99,7 +99,7 @@ async function capture(database:DB,body:Payload){
  }
  if(stock!=='available'){
   const custom=await quote(database,format,language)
-  if(custom.status==='quoted'){amount=custom.amount_inr;quoteStatus=custom.provisional?'provisional':'verified'}
+  if(custom.status==='quoted' && typeof custom.amount_inr==='number'){amount=custom.amount_inr;quoteStatus=custom.provisional?'provisional':'verified'}
  }
  const call=await database.from('receptionist_calls')
   .upsert({interaction_id:interaction,caller_phone:caller},{onConflict:'interaction_id'}).select('id').single()
